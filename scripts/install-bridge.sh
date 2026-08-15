@@ -61,13 +61,41 @@ echo "▸ Empacotando o painel num arquivo só…"
 BUNDLE="$REPO_ROOT/dist/bridge-panel.jsx"
 node "$REPO_ROOT/scripts/bundle-jsx.mjs" "$JSX_DIR/bridge-panel.jsx" "$BUNDLE"
 
-# A pasta fica dentro do aplicativo e normalmente exige permissão de administrador.
-# Testar antes evita uma cópia pela metade.
+# A pasta de painéis fica dentro do pacote do aplicativo e exige administrador.
+#
+# Quando este script é chamado por um agente (Claude Code, CI, qualquer coisa sem
+# terminal interativo), o sudo não tem como mostrar o prompt de senha e falha na
+# hora — mas o `set -e` aborta antes de copiar, e o sintoma que aparece é "o painel
+# não está no menu Window", que não sugere nada disso.
+#
+# Detectar aqui e explicar vale mais que deixar falhar lá na frente.
 if [ -w "$PANELS_DIR" ]; then
   SUDO=""
-else
+elif sudo -n true 2>/dev/null || [ -t 0 ]; then
   echo "▸ A pasta de painéis exige permissão de administrador — vou pedir sua senha."
   SUDO="sudo"
+else
+  cat >&2 <<MSG
+
+✗ Preciso de permissão de administrador, mas não há terminal interativo para
+  pedir a senha — provavelmente este script foi chamado por um agente.
+
+  DUAS SAÍDAS:
+
+  A) Sem instalar nada (mais rápido, e é o que eu recomendo agora):
+     No After Effects, use File → Scripts → Run Script File… e escolha
+         $REPO_ROOT/dist/bridge-panel.jsx
+     O painel abre como janela flutuante e funciona igual. Só precisa repetir
+     quando reiniciar o After Effects.
+
+  B) Instalar de forma permanente (painel encaixável):
+     Abra o Terminal.app — não o Claude Code — e rode:
+         bash "$REPO_ROOT/scripts/install-bridge.sh"
+
+MSG
+  # O bundle já está pronto, então a saída A funciona imediatamente.
+  echo "▸ Bundle gerado em: $BUNDLE" >&2
+  exit 1
 fi
 
 # Remove a instalação antiga com includes, se existir. Deixar a pasta lib/ para trás

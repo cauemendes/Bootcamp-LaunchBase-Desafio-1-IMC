@@ -22,12 +22,35 @@ npm install
 
 ### 2. Painel da ponte
 
+**O painel não é um chat.** Ele é uma peça silenciosa que fica ouvindo dentro do
+After Effects. Você conversa com o Claude no terminal; o painel só executa. É por
+isso que ele não tem campo de texto.
+
+Gere o arquivo:
+
+```bash
+node scripts/bundle-jsx.mjs packages/jsx/bridge-panel.jsx dist/bridge-panel.jsx
+```
+
+Agora escolha um dos dois caminhos:
+
+**A — Sem instalar (comece por aqui).** No After Effects:
+**File → Scripts → Run Script File…** → escolha `dist/bridge-panel.jsx`.
+
+O painel abre como janela flutuante e funciona igual. Precisa repetir quando
+reiniciar o After Effects, e é só isso. Nenhuma senha, nenhuma pasta de sistema,
+nada que possa falhar em silêncio.
+
+**B — Instalando de vez (painel encaixável).**
+
 ```bash
 bash scripts/install-bridge.sh
 ```
 
-Ele copia `bridge-panel.jsx` e a pasta `lib/` para a pasta ScriptUI Panels do After
-Effects. Pede senha de administrador, porque essa pasta fica dentro do aplicativo.
+⚠️ **Rode isso no Terminal.app, não pelo Claude Code.** O script copia para dentro
+do pacote do aplicativo e precisa de `sudo` — que não consegue pedir senha quando é
+um agente chamando. O script detecta e avisa, mas o caminho A evita o problema
+inteiro.
 
 ### 3. A permissão que todo mundo esquece
 
