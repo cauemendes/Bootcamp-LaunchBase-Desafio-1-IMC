@@ -26,20 +26,15 @@ npm install
 After Effects. Você conversa com o Claude no terminal; o painel só executa. É por
 isso que ele não tem campo de texto.
 
-Gere o arquivo:
-
-```bash
-node scripts/bundle-jsx.mjs packages/jsx/bridge-panel.jsx dist/bridge-panel.jsx
-```
-
-Agora escolha um dos dois caminhos:
-
 **A — Sem instalar (comece por aqui).** No After Effects:
 **File → Scripts → Run Script File…** → escolha `dist/bridge-panel.jsx`.
 
-O painel abre como janela flutuante e funciona igual. Precisa repetir quando
+Esse arquivo vem pronto no repositório — não precisa gerar nada. O painel abre como
+janela flutuante e funciona igual à versão encaixável. Precisa repetir quando
 reiniciar o After Effects, e é só isso. Nenhuma senha, nenhuma pasta de sistema,
 nada que possa falhar em silêncio.
+
+(Se você mexer no código do painel, `npm run bundle` regenera o arquivo.)
 
 **B — Instalando de vez (painel encaixável).**
 

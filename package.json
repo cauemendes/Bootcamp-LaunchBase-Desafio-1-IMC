@@ -17,6 +17,7 @@
     "test": "node --test \"packages/*/test/*.test.js\"",
     "build:cep": "npm install --workspace packages/cep",
     "analyze": "node scripts/analyze.mjs",
-    "mcp": "node packages/mcp/bin/vectorize-ae-mcp.mjs"
+    "mcp": "node packages/mcp/bin/vectorize-ae-mcp.mjs",
+    "bundle": "node scripts/bundle-jsx.mjs packages/jsx/bridge-panel.jsx dist/bridge-panel.jsx"
   }
 }

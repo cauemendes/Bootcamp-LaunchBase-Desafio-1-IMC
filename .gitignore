@@ -13,5 +13,9 @@ Thumbs.db
 .env
 .env.local
 
-# Bundle do ExtendScript gerado pela instalação.
-dist/
+# O bundle do painel é gerado, mas VAI para o repositório de propósito: é o que
+# o usuário abre no After Effects, e pedir que ele rode um comando de build antes
+# só cria um passo a mais para falhar. Regenerado por scripts/install-bridge.sh e
+# por `npm run bundle`.
+dist/*
+!dist/bridge-panel.jsx
