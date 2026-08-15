@@ -26,6 +26,27 @@
 
 // ---------------------------------------------------------------- estado
 
+/**
+ * Cancela o polling de uma carga anterior nesta mesma engine.
+ *
+ * Abrir o painel duas vezes — o encaixado da instalação mais o flutuante do
+ * Run Script File, por exemplo — reexecuta este arquivo na engine "vectorizeAE" e
+ * substitui `vecBridge` por um objeto novo. A tarefa agendada pela carga anterior
+ * continua viva, mas apontando para um estado que não existe mais: dois pollings
+ * disputando a mesma pasta, e o log de um dos painéis congelado sem explicação.
+ *
+ * O id fica em $.global porque `var vecBridge` é reinicializado a cada carga, e
+ * portanto não serve para lembrar do que veio antes.
+ */
+if ($.global.vecBridgeTaskId !== undefined && $.global.vecBridgeTaskId !== null) {
+  try {
+    app.cancelTask($.global.vecBridgeTaskId);
+  } catch (e) {
+    // A tarefa já pode ter sido cancelada; o que importa é não deixar duas.
+  }
+  $.global.vecBridgeTaskId = null;
+}
+
 var vecBridge = {
   running: false,
   taskId: null,
@@ -251,6 +272,7 @@ function vecBridgeStart() {
 
   vecBridge.running = true;
   vecBridge.taskId = app.scheduleTask("vecBridgePoll()", vecBridge.POLL_MS, true);
+  $.global.vecBridgeTaskId = vecBridge.taskId;
 
   vecBridgeStatus("ouvindo");
   vecBridgeLog("ponte ativa em " + dirs.base.fsName);
@@ -266,6 +288,7 @@ function vecBridgeStop() {
       app.cancelTask(vecBridge.taskId);
     } catch (e) {}
     vecBridge.taskId = null;
+    $.global.vecBridgeTaskId = null;
   }
 
   vecBridge.running = false;
