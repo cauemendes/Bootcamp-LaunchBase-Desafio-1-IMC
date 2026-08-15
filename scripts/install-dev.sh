@@ -18,20 +18,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXTENSION_SRC="$REPO_ROOT/packages/cep"
 EXTENSION_NAME="ai.vectorize.ae"
 
-# CSXS.11 é o runtime do After Effects 2024/2025. Versões mais novas do AE podem
-# usar um número maior — se o painel não aparecer, confira qual pasta CSXS.* existe
-# na sua máquina e ajuste aqui.
-CSXS_VERSION="11"
+# Cada versão do host usa um domínio de preferências CSXS diferente, e o número não
+# acompanha a versão do After Effects: CSXS.11 atende do CC 2021 em diante, mas
+# versões mais novas podem passar para 12 ou além. Escrever PlayerDebugMode no
+# domínio errado é a causa mais comum de "instalei e o painel não aparece" — sem
+# erro, sem aviso, o painel simplesmente não existe no menu.
+#
+# Como escrever numa versão que o host não usa é inofensivo, marcamos a faixa toda.
+CSXS_VERSIONS="10 11 12 13 14"
 
 case "$(uname -s)" in
-  Darwin)
-    EXTENSIONS_DIR="$HOME/Library/Application Support/Adobe/CEP/extensions"
-    PREFS_FILE="$HOME/Library/Preferences/com.adobe.CSXS.$CSXS_VERSION.plist"
-    ;;
+  Darwin)  PLATFORM="mac";     EXTENSIONS_DIR="$HOME/Library/Application Support/Adobe/CEP/extensions" ;;
   MINGW*|MSYS*|CYGWIN*)
-    EXTENSIONS_DIR="$APPDATA/Adobe/CEP/extensions"
-    PREFS_FILE=""
-    ;;
+           PLATFORM="windows"; EXTENSIONS_DIR="$APPDATA/Adobe/CEP/extensions" ;;
   *)
     echo "Este script cobre macOS e Windows (Git Bash). O CEP não roda em Linux." >&2
     exit 1
@@ -41,14 +40,19 @@ esac
 echo "▸ Compilando o painel…"
 npm --prefix "$EXTENSION_SRC" run build
 
-echo "▸ Habilitando extensões não assinadas (PlayerDebugMode)…"
-if [ -n "$PREFS_FILE" ]; then
-  defaults write "com.adobe.CSXS.$CSXS_VERSION" PlayerDebugMode 1
-  # Sem isso o macOS pode servir um valor em cache do daemon de preferências e o
-  # ajuste não vale até o próximo logout.
+echo "▸ Habilitando extensões não assinadas (PlayerDebugMode) em CSXS $CSXS_VERSIONS…"
+for v in $CSXS_VERSIONS; do
+  if [ "$PLATFORM" = "mac" ]; then
+    defaults write "com.adobe.CSXS.$v" PlayerDebugMode 1
+  else
+    reg add "HKCU\\Software\\Adobe\\CSXS.$v" /v PlayerDebugMode /t REG_SZ /d 1 /f >/dev/null
+  fi
+done
+
+if [ "$PLATFORM" = "mac" ]; then
+  # Sem isso o macOS pode continuar servindo o valor antigo em cache pelo daemon de
+  # preferências, e o ajuste só valeria depois de um logout.
   killall cfprefsd 2>/dev/null || true
-else
-  reg add "HKCU\\Software\\Adobe\\CSXS.$CSXS_VERSION" /v PlayerDebugMode /t REG_SZ /d 1 /f >/dev/null
 fi
 
 echo "▸ Ligando a extensão em $EXTENSIONS_DIR…"
