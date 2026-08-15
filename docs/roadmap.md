@@ -40,6 +40,35 @@ Ordem sugerida, do menor risco pro maior:
 
 ---
 
+## Direção definida: a cena reconstruída é um template, não um desenho
+
+O uso real é motion 2D chapado com animação simples, mas com **controle de cores,
+formas e textos para ajustes futuros e traduções**. Isso não é um requisito de
+acabamento — muda o que o construtor deve produzir.
+
+Uma cena montada como camadas soltas exige mergulhar na timeline para trocar uma cor
+ou um texto. Uma cena montada como **template** expõe esses controles num lugar só.
+O padrão que os motion designers usam para isso:
+
+1. Uma camada nula `CONTROLES` com efeitos **Color Control** (um por cor da paleta) e
+   **Slider/Checkbox Control** para o que for paramétrico.
+2. Todo fill referencia a paleta por expressão, em vez de ter a cor gravada:
+   `thisComp.layer("CONTROLES").effect("Brand / Primary")("Color")`
+3. Textos com o mesmo tratamento, ou expostos direto.
+4. As propriedades relevantes vão para o **Essential Graphics**, e a comp pode ser
+   exportada como **.mogrt**.
+
+Duas consequências práticas:
+
+- **O campo `palette` do SceneSpec deixa de ser informativo e passa a ser
+  estrutural** — é ele que gera os Color Controls. Já existe no formato.
+- **Compartilhar com a equipe pode não exigir a extensão.** Um `.mogrt` abre no
+  After Effects e no Premiere de qualquer pessoa, sem instalar nada. A extensão fica
+  sendo a ferramenta de autoria; o template é o entregável.
+
+Isso vira o próximo bloco de trabalho depois da validação do adapter, antes de
+qualquer coisa agêntica.
+
 ## Backlog, por ordem de valor
 
 ### Gradientes
