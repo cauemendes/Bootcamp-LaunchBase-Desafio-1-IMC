@@ -1,0 +1,14 @@
+node_modules/
+
+# Saídas do bundle do painel — geradas por `npm run build --prefix packages/cep`.
+packages/cep/js/
+# Cópia do ExtendScript feita pelo build; a fonte é packages/jsx/.
+packages/cep/jsx/
+
+# Cenas geradas durante testes manuais.
+*.scene.json
+
+.DS_Store
+Thumbs.db
+.env
+.env.local

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Manifesto da extensão CEP.
+
+  Notas de compatibilidade, porque erro aqui gera um painel que simplesmente não
+  aparece na lista de Extensions, sem nenhuma mensagem:
+
+  - Host "AEFT" com faixa [24.0,99.9] cobre After Effects 2024 e 2025 e não trava
+    em versões futuras.
+  - RequiredRuntime CSXS 11.0 é o runtime dos hosts 2024+.
+  - --enable-nodejs liga o Node dentro do painel (é o que permite ler arquivo e
+    escrever o JSON temporário que o ExtendScript consome).
+  - --mixed-context faz o Node e o contexto do browser compartilharem o mesmo
+    escopo global. Sem isso, `require` fica invisível no código da página.
+-->
+<ExtensionManifest Version="11.0"
+                   ExtensionBundleId="ai.vectorize.ae"
+                   ExtensionBundleVersion="0.1.0"
+                   ExtensionBundleName="Vectorize AE"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <ExtensionList>
+    <Extension Id="ai.vectorize.ae.panel" Version="0.1.0" />
+  </ExtensionList>
+
+  <ExecutionEnvironment>
+    <HostList>
+      <Host Name="AEFT" Version="[24.0,99.9]" />
+    </HostList>
+
+    <LocaleList>
+      <Locale Code="All" />
+    </LocaleList>
+
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="11.0" />
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+
+  <DispatchInfoList>
+    <Extension Id="ai.vectorize.ae.panel">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./index.html</MainPath>
+          <ScriptPath>./jsx/build-scene.jsx</ScriptPath>
+          <CEFCommandLine>
+            <Parameter>--enable-nodejs</Parameter>
+            <Parameter>--mixed-context</Parameter>
+          </CEFCommandLine>
+        </Resources>
+
+        <Lifecycle>
+          <AutoVisible>true</AutoVisible>
+        </Lifecycle>
+
+        <UI>
+          <Type>Panel</Type>
+          <Menu>Vectorize AE</Menu>
+          <Geometry>
+            <Size>
+              <Height>560</Height>
+              <Width>340</Width>
+            </Size>
+            <MinSize>
+              <Height>360</Height>
+              <Width>300</Width>
+            </MinSize>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+</ExtensionManifest>

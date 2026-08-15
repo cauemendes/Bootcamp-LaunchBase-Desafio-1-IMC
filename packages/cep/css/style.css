@@ -1,0 +1,213 @@
+/*
+  Painéis de CEP são renderizados dentro da UI do After Effects, e o AE não
+  informa o tema ao painel de forma direta. Estes tons acompanham o cinza médio
+  padrão do AE; se o usuário estiver no tema mais claro, o painel fica escuro no
+  meio da interface. Sincronizar com o tema real exige ouvir o evento
+  `com.adobe.csxs.events.ThemeColorChanged` — está no roadmap.
+*/
+
+:root {
+  --bg: #262626;
+  --bg-raised: #303030;
+  --bg-sunken: #1e1e1e;
+  --line: #3d3d3d;
+  --text: #d6d6d6;
+  --text-dim: #8f8f8f;
+  --accent: #4a90d9;
+  --ok: #5cb85c;
+  --warn: #d9a441;
+  --error: #d9534f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body.is-busy { cursor: progress; }
+body.is-busy .btn { opacity: 0.5; }
+
+.panel { display: flex; flex-direction: column; gap: 16px; }
+
+/* --- passos --- */
+
+.step { display: flex; flex-direction: column; gap: 8px; }
+
+.step__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* --- dropzone --- */
+
+.dropzone {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 130px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  background: var(--bg-sunken);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.dropzone:hover,
+.dropzone.is-over {
+  border-color: var(--accent);
+  background: #232a33;
+}
+
+.dropzone__hint { color: var(--text-dim); }
+.dropzone__preview { max-width: 100%; max-height: 220px; display: block; }
+/* Com preview carregado, a dica some para não competir com a imagem. */
+.dropzone__preview:not([hidden]) + .dropzone__hint { display: none; }
+
+.meta { margin: 0; color: var(--text-dim); font-size: 11px; }
+
+/* --- campos --- */
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+
+.field--inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.field__label { color: var(--text-dim); }
+.field__note { color: var(--text-dim); font-size: 10px; line-height: 1.4; }
+
+input[type="text"],
+input[type="password"],
+textarea,
+select {
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  font: inherit;
+  width: 100%;
+}
+
+.field--inline select { width: auto; min-width: 150px; }
+
+textarea { resize: vertical; }
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.check input { margin-top: 2px; }
+.check em { color: var(--text-dim); font-style: normal; }
+
+/* --- botões --- */
+
+.btn {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) { background: #3a3a3a; }
+
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn--primary:hover:not(:disabled) { background: #5b9ee0; }
+
+.btn:disabled { opacity: 0.45; cursor: default; }
+
+/* --- relatório --- */
+
+.report {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-raised);
+}
+
+.report__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.report__summary span { color: var(--text-dim); font-size: 11px; }
+.report__clean { margin: 6px 0 0; color: var(--ok); font-size: 11px; }
+
+.report__issues {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+.report__issues li { margin-bottom: 3px; }
+.report__issues .is-error { color: var(--error); }
+.report__issues .is-warn { color: var(--warn); }
+
+/* --- ajustes e status --- */
+
+.settings {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-raised);
+}
+
+.settings summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings[open] summary { margin-bottom: 10px; }
+.settings .field + .field { margin-top: 10px; }
+
+.status {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  border-left: 3px solid var(--line);
+  font-size: 11px;
+}
+
+.status--info  { border-left-color: var(--accent); }
+.status--ok    { border-left-color: var(--ok);    color: var(--ok); }
+.status--warn  { border-left-color: var(--warn);  color: var(--warn); }
+.status--error { border-left-color: var(--error); color: var(--error); }

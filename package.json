@@ -1,0 +1,20 @@
+{
+  "name": "vectorize-ae",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automação de design e motion graphics para o After Effects, com reconstrução de imagens 2D em shape layers via IA",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cep"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"packages/core/test/*.test.js\"",
+    "build:cep": "npm install --workspace packages/cep",
+    "analyze": "node scripts/analyze.mjs"
+  }
+}

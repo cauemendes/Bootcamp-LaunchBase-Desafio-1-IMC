@@ -1,0 +1,125 @@
+/**
+ * Utilitários de base para o ExtendScript.
+ *
+ * ExtendScript é ECMAScript 3. Não existe JSON, não existe Array.prototype.map /
+ * forEach / indexOf, não existe String.prototype.trim. Tudo que o código do projeto
+ * usa além do ES3 puro está aqui, escrito à mão.
+ *
+ * Sobre JSON: o painel escreve o SceneSpec num arquivo temporário e o ExtendScript
+ * lê e avalia com eval(). JSON é um subconjunto de literal de objeto JavaScript,
+ * então isso funciona sem parser — desde que o painel escape U+2028/U+2029, que são
+ * válidos em JSON mas quebram literais de string em engines antigas. Ver
+ * `writeSceneFile()` no painel.
+ *
+ * A ida de volta (resultado → painel) precisa de serialização, e é o que `vecJson`
+ * faz. Ele cobre só o que o objeto de resultado contém: string, número, booleano,
+ * null, array e objeto simples.
+ */
+
+/*global File*/
+
+var vec = vec || {};
+
+/** Serializa um valor para JSON. Escopo deliberadamente pequeno — ver acima. */
+vec.json = function (value) {
+  if (value === null || value === undefined) return "null";
+
+  var t = typeof value;
+
+  if (t === "boolean") return value ? "true" : "false";
+
+  if (t === "number") {
+    // Infinity e NaN não existem em JSON; viram null, como no JSON.stringify real.
+    return isFinite(value) ? String(value) : "null";
+  }
+
+  if (t === "string") return vec.quote(value);
+
+  if (value instanceof Array) {
+    var parts = [];
+    for (var i = 0; i < value.length; i++) parts.push(vec.json(value[i]));
+    return "[" + parts.join(",") + "]";
+  }
+
+  if (t === "object") {
+    var pairs = [];
+    for (var key in value) {
+      if (!value.hasOwnProperty(key)) continue;
+      if (typeof value[key] === "function") continue;
+      pairs.push(vec.quote(key) + ":" + vec.json(value[key]));
+    }
+    return "{" + pairs.join(",") + "}";
+  }
+
+  return "null";
+};
+
+var ESCAPES = { "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r", '"': '\\"', "\\": "\\\\" };
+
+vec.quote = function (str) {
+  var out = '"';
+  for (var i = 0; i < str.length; i++) {
+    var ch = str.charAt(i);
+    if (ESCAPES[ch]) {
+      out += ESCAPES[ch];
+    } else if (ch < " ") {
+      var code = ch.charCodeAt(0).toString(16);
+      out += "\\u" + "0000".substring(code.length) + code;
+    } else {
+      out += ch;
+    }
+  }
+  return out + '"';
+};
+
+/** Lê um arquivo UTF-8 inteiro. Devolve null se não der pra abrir. */
+vec.readFile = function (path) {
+  var file = new File(path);
+  if (!file.exists) return null;
+
+  file.encoding = "UTF-8";
+  if (!file.open("r")) return null;
+
+  try {
+    return file.read();
+  } finally {
+    file.close();
+  }
+};
+
+/**
+ * "#ff4422" → [r, g, b] com componentes de 0 a 1.
+ *
+ * `gamma` compensa projeto em espaço de trabalho linear, onde uma cor sRGB crua
+ * sai lavada. Deixe 1 (padrão) para projeto sRGB.
+ */
+vec.hexToColor = function (hex, gamma) {
+  var body = String(hex).replace("#", "");
+  if (body.length === 3) {
+    body = body.charAt(0) + body.charAt(0) + body.charAt(1) + body.charAt(1) + body.charAt(2) + body.charAt(2);
+  }
+
+  var r = parseInt(body.substring(0, 2), 16) / 255;
+  var g = parseInt(body.substring(2, 4), 16) / 255;
+  var b = parseInt(body.substring(4, 6), 16) / 255;
+
+  if (gamma && gamma !== 1) {
+    r = Math.pow(r, gamma);
+    g = Math.pow(g, gamma);
+    b = Math.pow(b, gamma);
+  }
+
+  return [r, g, b];
+};
+
+/** Nome de camada seguro: o AE trunca em 255 e engasga com quebra de linha. */
+vec.safeName = function (name, fallback) {
+  var s = String(name === undefined || name === null ? "" : name);
+  s = s.replace(/[\r\n\t]+/g, " ");
+  if (s.length > 200) s = s.substring(0, 200);
+  return s === "" ? fallback : s;
+};
+
+vec.has = function (obj, key) {
+  return obj !== null && obj !== undefined && obj[key] !== undefined;
+};

@@ -1,0 +1,19 @@
+{
+  "name": "@vectorize-ae/core",
+  "version": "0.1.0",
+  "description": "Núcleo portátil: SceneSpec, cor, path SVG e cliente da API do Claude",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./scene-spec": "./src/scene-spec.js",
+    "./svg-path": "./src/svg-path.js",
+    "./color": "./src/color.js",
+    "./image-info": "./src/image-info.js"
+  },
+  "files": ["src"],
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.0"
+  }
+}

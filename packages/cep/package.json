@@ -1,0 +1,18 @@
+{
+  "name": "@vectorize-ae/cep",
+  "version": "0.1.0",
+  "description": "Painel CEP do Vectorize AE para After Effects 2024/2025",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "@vectorize-ae/core": "0.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
