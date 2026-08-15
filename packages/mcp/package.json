@@ -1,0 +1,21 @@
+{
+  "name": "@vectorize-ae/mcp",
+  "version": "0.1.0",
+  "description": "Servidor MCP que expõe o After Effects como ferramentas para o Claude",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "vectorize-ae-mcp": "./bin/vectorize-ae-mcp.mjs"
+  },
+  "exports": {
+    ".": "./src/server.js",
+    "./bridge": "./src/bridge.js",
+    "./protocol": "./src/protocol.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@vectorize-ae/core": "0.1.0",
+    "zod": "^4.4.0"
+  }
+}

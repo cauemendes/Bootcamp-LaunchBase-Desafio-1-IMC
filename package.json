@@ -7,14 +7,16 @@
   "type": "module",
   "workspaces": [
     "packages/core",
-    "packages/cep"
+    "packages/cep",
+    "packages/mcp"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test \"packages/core/test/*.test.js\"",
+    "test": "node --test \"packages/*/test/*.test.js\"",
     "build:cep": "npm install --workspace packages/cep",
-    "analyze": "node scripts/analyze.mjs"
+    "analyze": "node scripts/analyze.mjs",
+    "mcp": "node packages/mcp/bin/vectorize-ae-mcp.mjs"
   }
 }

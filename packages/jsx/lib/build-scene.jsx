@@ -10,10 +10,10 @@
  * `{ ok: false, error: "..." }` com mensagem legível.
  */
 
-//@include "lib/util.jsx"
-//@include "lib/ae-shape.jsx"
-//@include "lib/ae-font.jsx"
-//@include "lib/ae-text.jsx"
+//@include "util.jsx"
+//@include "ae-shape.jsx"
+//@include "ae-font.jsx"
+//@include "ae-text.jsx"
 
 /*global app, vec, CompItem*/
 
