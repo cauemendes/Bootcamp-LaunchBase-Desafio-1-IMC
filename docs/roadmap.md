@@ -10,64 +10,89 @@
 | Leitura de dimensão de imagem (PNG/JPEG/GIF/WebP) | ✅ pronto e testado |
 | Prompt + schema de structured output | ✅ escrito, precisa de calibragem com imagens reais |
 | Cliente da API do Claude | ✅ escrito, não exercitado contra a API nesta sessão |
-| Construtor ExtendScript | ⚠️ escrito, **não validado dentro do AE** |
-| Painel CEP | ⚠️ escrito, **não validado dentro do AE** |
+| Geometria do construtor (shapes, paths, fill, stroke, coordenadas) | ✅ verificado no AE 2026 (26.3) |
+| Construtor — texto | ❌ `fontFamily` é somente leitura no 26.3; precisa usar `doc.font` + `app.fonts` |
+| Gradientes | ❌ confirmado não-scriptável (`Grad Colors` é `NO_VALUE`) |
+| Painel CEP | ⚠️ escrito, ainda não aberto dentro do AE |
 
-O que está marcado com ⚠️ foi escrito a partir da documentação de matchnames e do
-comportamento conhecido do CEP, mas não rodou num After Effects de verdade — não
-havia AE neste ambiente. Antes de confiar, é preciso a passada de validação abaixo.
+### O que o autoteste confirmou (AE 2026 26.3, macOS)
+
+30 verificações passaram, 4 falharam. `packages/jsx/selftest.jsx` reproduz.
+
+Confirmado funcionando: retângulo, elipse, estrela e polígono regular, paths bezier
+(inclusive dois subpaths no mesmo grupo, para ícone com furo), fill, stroke completo
+com cap e join, transform de grupo, leitura recursiva de Contents, e o AE recusando
+raio interno em polígono regular como esperado.
+
+**A suposição de coordenadas está correta**: com âncora e posição em `(0,0)`, o
+espaço da camada coincide com o da comp e `sourceRectAtTime` devolve exatamente as
+coordenadas de canvas. Todo o posicionamento do projeto dependia disso.
+
+Descobertas que corrigiram o código:
+
+- `ADBE Vector Star Outer Roundess` — a grafia **com** o erro de digitação é a válida;
+  a correta devolve `null`.
+- `textDocument.fontFamily` e `fontStyle` são **somente leitura**. O caminho é
+  `textDocument.font` com o nome PostScript, resolvido via `app.fonts`.
+- `ADBE Vector Grad Colors` tem `propertyValueType` igual a `NO_VALUE` — não há valor
+  para ler nem escrever. Gradiente não é questão de achar o formato certo.
 
 ---
 
-## Próximo passo: validar no AE
+## Próximo passo
 
-Ordem sugerida, do menor risco pro maior:
-
-1. **Instalar e abrir o painel.** `scripts/install-dev.sh`, reiniciar o AE, conferir
-   que aparece em Window → Extensions. Se não aparecer, é quase sempre
-   PlayerDebugMode ou versão do CSXS no manifesto.
-2. **Construir uma cena escrita à mão.** Montar um `scene.json` com um retângulo, um
-   círculo e um texto, e chamar `vecBuildSceneFromFile` pelo console do painel
-   (localhost:8088). Isso isola o adapter da IA.
-3. **Conferir cada matchname.** Os mais prováveis de estarem errados:
-   `ADBE Vector Star Inner Radius` (o AE tem propriedades com "Roundess" escrito
-   errado no matchname real), e as constantes de line cap/join. Corrigir e registrar
-   em `.claude/skills/ae-shape-layers/SKILL.md`.
-4. **Validar `recenterAnchor`.** Depende de `sourceRectAtTime` devolver coordenadas
-   no espaço que assumimos. Se as camadas pularem de lugar ao centralizar âncora, é
-   aqui.
-5. **Rodar o fluxo completo** com uma imagem de verdade.
+1. **Corrigir a resolução de fonte** — `packages/jsx/selftest-fonts.jsx` levanta a
+   forma exata de `app.fonts` no 26.3; a correção vem em cima disso.
+2. **Abrir o painel dentro do AE.** `scripts/install-dev.sh`, reiniciar, conferir em
+   Window → Extensions.
+3. **Construir uma cena escrita à mão** pelo console do painel, antes de gastar
+   chamada de API.
+4. **Começar a camada de ferramentas**, pelas de leitura.
 
 ---
 
-## Direção definida: a cena reconstruída é um template, não um desenho
+## O objetivo real: Claude operando dentro do After Effects
 
-O uso real é motion 2D chapado com animação simples, mas com **controle de cores,
-formas e textos para ajustes futuros e traduções**. Isso não é um requisito de
-acabamento — muda o que o construtor deve produzir.
+Reconstruir imagem em shapes é **a primeira tarefa**, não o produto. O produto é ter
+o Claude dentro do After Effects executando várias tarefas de motion graphics, com o
+designer no comando.
 
-Uma cena montada como camadas soltas exige mergulhar na timeline para trocar uma cor
-ou um texto. Uma cena montada como **template** expõe esses controles num lugar só.
-O padrão que os motion designers usam para isso:
+Isso muda a forma do software. Uma transformação de mão única (imagem entra, camadas
+saem) é linear. Um assistente é um **laço**: ler o estado do projeto → decidir → agir
+→ ver o resultado → decidir de novo.
 
-1. Uma camada nula `CONTROLES` com efeitos **Color Control** (um por cor da paleta) e
-   **Slider/Checkbox Control** para o que for paramétrico.
-2. Todo fill referencia a paleta por expressão, em vez de ter a cor gravada:
-   `thisComp.layer("CONTROLES").effect("Brand / Primary")("Color")`
-3. Textos com o mesmo tratamento, ou expostos direto.
-4. As propriedades relevantes vão para o **Essential Graphics**, e a comp pode ser
-   exportada como **.mogrt**.
+A consequência prática é que a peça central a construir não é interface, e não é a
+escolha entre CEP e UXP. É uma **camada de ferramentas** — operações sobre o After
+Effects que o modelo possa chamar, cada uma com schema declarado:
 
-Duas consequências práticas:
+```
+ler_comp_ativa      criar_camada         aplicar_expressao
+listar_camadas      setar_propriedade    renderizar_frame
+ler_camada          adicionar_keyframe   agrupar_em_precomp
+```
 
-- **O campo `palette` do SceneSpec deixa de ser informativo e passa a ser
-  estrutural** — é ele que gera os Color Controls. Já existe no formato.
-- **Compartilhar com a equipe pode não exigir a extensão.** Um `.mogrt` abre no
-  After Effects e no Premiere de qualquer pessoa, sem instalar nada. A extensão fica
-  sendo a ferramenta de autoria; o template é o entregável.
+Com essa camada existindo, o painel vira só um cliente dela. Um servidor MCP vira
+outro cliente, sem código novo. E a migração CEP → UXP toca só o transporte.
 
-Isso vira o próximo bloco de trabalho depois da validação do adapter, antes de
-qualquer coisa agêntica.
+A ordem de construção, por dependência:
+
+1. **Ferramentas de leitura primeiro.** Sem enxergar o projeto, o modelo só consegue
+   criar do zero — nunca ajudar no que já existe, que é onde está o tempo do dia a dia.
+2. **Ferramentas de escrita**, reaproveitando o construtor que já existe.
+3. **O laço** — painel de conversa, histórico, execução de ferramenta, e o modelo
+   vendo o resultado de cada ação antes da próxima.
+4. **Renderizar frame para o modelo ver.** É o que fecha o laço de verdade e o mais
+   difícil de fazer bem.
+
+### Essential Graphics: adiado por decisão
+
+A ideia de amarrar todas as cores a uma paleta central via expressões (e exportar
+`.mogrt`) foi avaliada e **adiada a pedido**. O uso real hoje é um projeto complexo,
+com muitas cores, montado inteiramente no After Effects, onde controle independente
+por camada vale mais que controle centralizado.
+
+Continua fazendo sentido como modo opcional — especialmente para projeto que precisa
+seguir paleta de cliente. Fica como opção do construtor, não como padrão.
 
 ## Backlog, por ordem de valor
 

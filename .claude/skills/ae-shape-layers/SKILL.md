@@ -23,11 +23,9 @@ em Vectors) é a lista de conteúdo dentro dele. Trocar um pelo outro é o erro 
 
 ## Matchnames
 
-> ⚠️ **Esta lista foi montada a partir da documentação e ainda não foi verificada
-> dentro de um After Effects real neste projeto.** Ao validar, corrija aqui — este
-> arquivo é a lista canônica do repositório. Alguns matchnames da Adobe têm erro de
-> digitação preservado por compatibilidade (`Roundess` sem o segundo "n" é o caso
-> mais famoso), então confirme antes de confiar.
+> ✅ **Verificado no After Effects 2026 (26.3), macOS**, com `packages/jsx/selftest.jsx`.
+> Ao mexer nesta lista, rode o autoteste de novo e atualize a nota — este arquivo é a
+> lista canônica do repositório.
 
 ### Retângulo — `ADBE Vector Shape - Rect`
 | Propriedade | Matchname | Notas |
@@ -55,10 +53,17 @@ Também não tem rotação própria.
 | Rotation | `ADBE Vector Star Rotation` | em graus — esta primitiva **tem** rotação |
 | Outer Radius | `ADBE Vector Star Outer Radius` | |
 | Inner Radius | `ADBE Vector Star Inner Radius` | **só existe com Type = 1** |
-| Outer Roundness | `ADBE Vector Star Outer Roundess` | grafia com erro, provável |
-| Inner Roundness | `ADBE Vector Star Inner Roundess` | idem |
+| Outer Roundness | `ADBE Vector Star Outer Roundess` | ✅ a grafia **com erro** é a válida |
+| Inner Roundness | `ADBE Vector Star Inner Roundess` | mesma grafia com erro |
 
-Escrever no raio interno de um polígono regular lança — cheque o tipo antes.
+⚠️ `ADBE Vector Star Outer Roundness` (grafia correta) devolve `null` — verificado no
+26.3. A Adobe preservou o erro de digitação por compatibilidade. Acessar propriedade
+inexistente não lança: devolve `null`, e o erro só aparece uma linha depois como
+`TypeError: null is not an object`. Isso vale pra qualquer matchname errado, então na
+dúvida cheque o retorno antes de encadear.
+
+Escrever no raio interno de um polígono regular lança — **confirmado no 26.3**. Cheque
+o tipo antes em vez de envolver em try/catch.
 
 ### Path livre — `ADBE Vector Shape - Group`
 Contém `ADBE Vector Shape`, que recebe um objeto `Shape`:
@@ -145,14 +150,32 @@ layer.property("ADBE Transform Group").property("ADBE Position").setValue(centro
 
 Mover âncora e posição para o mesmo valor mantém o visual e deixa a camada animável.
 
-## Gradientes: cuidado
+## Gradientes: as paradas não são scriptáveis
 
 `ADBE Vector Graphic - G-Fill` tem `ADBE Vector Grad Type` (1 linear, 2 radial),
-`ADBE Vector Grad Start Pt` e `ADBE Vector Grad End Pt`, que são diretos.
+`ADBE Vector Grad Start Pt` e `ADBE Vector Grad End Pt`. **Esses três funcionam** —
+verificado no 26.3.
 
-**`ADBE Vector Grad Colors` não é.** As paradas ficam num array numérico achatado sem
-API declarada, e escrever nele por script é notoriamente instável entre versões. Não
-existe uma forma documentada e estável de definir paradas de gradiente por script.
+**As paradas de cor não.** Ler ou escrever `ADBE Vector Grad Colors` lança:
 
-Recomendação até isso ser resolvido: usar cor sólida, ou criar o gradiente e escrever
-com `try/catch` caindo para sólido se falhar. Ver `docs/roadmap.md`.
+```
+Can not get or set a value from this property
+(matchname is "ADBE Vector Grad Colors").
+This property's propertyValueType is PropertyValueType.NO_VALUE.
+```
+
+`NO_VALUE` significa que a propriedade não expõe valor nenhum ao scripting. Não é
+questão de achar o formato certo do array — **não há valor para ler nem escrever**.
+Verificado no After Effects 2026 (26.3).
+
+O que resta, em ordem de esforço:
+
+1. **Cor sólida** com a cor média do gradiente. É o que o projeto faz hoje.
+2. **Duas camadas com máscara de gradiente** — sólido A, sólido B, e um Linear Wipe
+   ou track matte fazendo a transição. Feio por dentro, correto por fora, e animável.
+3. **Animation preset (.ffx)** gravado à mão com o gradiente pronto, aplicado por
+   script. Funciona, mas cada gradiente vira um arquivo — não escala.
+4. **Importar SVG/AI** com o gradiente e deixar o AE converter. Perde o controle sobre
+   o resultado.
+
+Nenhuma é boa o bastante para entrar no formato sem uma decisão consciente.

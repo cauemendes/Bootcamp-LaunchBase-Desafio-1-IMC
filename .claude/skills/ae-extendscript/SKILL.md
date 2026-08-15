@@ -112,7 +112,23 @@ Coisas que mordem:
 - **`prop.canSetExpression`** diz se dá pra atribuir expressão.
 
 Propriedades de cor esperam `[r, g, b]` ou `[r, g, b, a]` com componentes de 0 a 1 —
-não 0–255.
+não 0–255. O alpha é opcional; três componentes bastam.
+
+**Matchname errado devolve `null`, não lança.** `layer.property("ADBE Coisa Errada")`
+retorna `null` em silêncio, e o erro só aparece uma linha depois como
+`TypeError: null is not an object`. Ao caçar um matchname suspeito, cheque o retorno
+antes de encadear — é a diferença entre "não existe" e "existe mas recusou o valor".
+
+## Texto: `fontFamily` é somente leitura
+
+No After Effects 2026 (26.3), escrever em `textDocument.fontFamily` lança
+`Unable to set "fontFamily". It is a readOnly attribute.` — verificado. O mesmo vale
+para `fontStyle`.
+
+O caminho válido é `textDocument.font`, que espera o **nome PostScript**
+(`HelveticaNeue-Bold`), não o nome de família. Para chegar nele a partir de um nome
+humano, use `app.fonts`. Veja `packages/jsx/selftest-fonts.jsx` para a forma exata da
+API nesta versão.
 
 ## Keyframes e easing
 
