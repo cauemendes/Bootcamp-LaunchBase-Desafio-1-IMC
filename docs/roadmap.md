@@ -11,7 +11,7 @@
 | Prompt + schema de structured output | ✅ escrito, precisa de calibragem com imagens reais |
 | Cliente da API do Claude | ✅ escrito, não exercitado contra a API nesta sessão |
 | Geometria do construtor (shapes, paths, fill, stroke, coordenadas) | ✅ verificado no AE 2026 (26.3) |
-| Construtor — texto | ❌ `fontFamily` é somente leitura no 26.3; precisa usar `doc.font` + `app.fonts` |
+| Construtor — texto | ✅ corrigido para `doc.font` + `app.fonts`, com fallback para Arial |
 | Gradientes | ❌ confirmado não-scriptável (`Grad Colors` é `NO_VALUE`) |
 | Painel CEP | ⚠️ escrito, ainda não aberto dentro do AE |
 
@@ -41,12 +41,10 @@ Descobertas que corrigiram o código:
 
 ## Próximo passo
 
-1. **Corrigir a resolução de fonte** — `packages/jsx/selftest-fonts.jsx` levanta a
-   forma exata de `app.fonts` no 26.3; a correção vem em cima disso.
-2. **Abrir o painel dentro do AE.** `scripts/install-dev.sh`, reiniciar, conferir em
-   Window → Extensions.
-3. **Construir uma cena escrita à mão** pelo console do painel, antes de gastar
-   chamada de API.
+1. ~~Corrigir a resolução de fonte~~ — feito, em `packages/jsx/lib/ae-font.jsx`.
+2. **Rodar o autoteste de novo** e conferir que as falhas de texto viraram OK.
+3. **Decidir o transporte** entre painel CEP e ponte ScriptUI + processo local
+   (ver a seção abaixo).
 4. **Começar a camada de ferramentas**, pelas de leitura.
 
 ---
@@ -84,6 +82,47 @@ A ordem de construção, por dependência:
 4. **Renderizar frame para o modelo ver.** É o que fecha o laço de verdade e o mais
    difícil de fazer bem.
 
+### Decisão em aberto: o transporte até o After Effects
+
+O After Effects não tem servidor de scripting. Um processo externo não consegue
+"chamar" o AE — alguma coisa precisa rodar *dentro* dele. Há duas formas:
+
+**A. Painel CEP** (o que está escrito hoje). O painel roda dentro do AE, tem
+Chromium e Node, chama a API do Claude ele mesmo e executa ExtendScript por
+`evalScript`. UI rica em HTML. Custo: manifesto, `PlayerDebugMode`, assinatura de
+`.zxp` para distribuir, e é a tecnologia que a Adobe está aposentando.
+
+**B. Painel ScriptUI + processo local, conversando por arquivo.** Um `.jsx` fica
+aberto no AE fazendo polling numa pasta compartilhada; um processo Node fora do AE
+escreve comandos ali e lê os resultados. É como o
+[after-effects-mcp](https://github.com/a-y-ibrahim/after-effects-mcp) funciona.
+Custo: latência de polling, o painel precisa estar aberto, e a UI do ScriptUI é
+pobre. Ganho: **nenhuma dependência de CEP** — instalar é copiar um arquivo para a
+pasta ScriptUI Panels, e o mesmo processo local vira servidor MCP sem código novo.
+
+As duas não se excluem: a ponte B entrega o laço agêntico e o MCP; o painel A entra
+depois como interface de conversa melhor sobre o mesmo cérebro.
+
+### O que vale copiar do after-effects-mcp
+
+Referência estudada em detalhe. O que a experiência deles ensina:
+
+- **`see-frame`** — renderizar um frame de volta como imagem para o modelo *ver* o
+  que fez. É o que fecha o laço de correção visual, e confirma que vale o esforço.
+- **ID por comando** no bridge de arquivo, para não ler resultado velho.
+- **Um grupo de undo por comando** — granularidade certa para agente, mais fina que
+  a nossa de hoje (um por cena).
+- **`matchName` em vez de rótulo de UI**, para funcionar em qualquer idioma. Já
+  fazemos, e importa aqui: o AE de teste está em português.
+- **`execute-script`** — ExtendScript arbitrário como escape hatch. É o "bash" do
+  After Effects: alavanca máxima, controle mínimo.
+
+O que **não** copiar: 48 ferramentas. Superfície grande custa contexto e confunde a
+escolha do modelo. Melhor poucas ferramentas bem delimitadas para o que é comum e
+seguro, mais `execute_script` para o resto — e promover a ferramenta dedicada só
+quando houver motivo (gating de operação destrutiva, resultado que precisa de
+formatação, ou algo que se beneficie de rodar em paralelo).
+
 ### Essential Graphics: adiado por decisão
 
 A ideia de amarrar todas as cores a uma paleta central via expressões (e exportar
@@ -96,13 +135,15 @@ seguir paleta de cliente. Fica como opção do construtor, não como padrão.
 
 ## Backlog, por ordem de valor
 
-### Gradientes
-O maior buraco do formato hoje — muito design 2D tem gradiente, e a ferramenta
-achata para cor sólida. Escrever paradas de gradiente por script no AE é
-notoriamente instável: a propriedade `ADBE Vector Grad Colors` guarda as paradas
-num array numérico achatado, sem API declarada. Precisa de experimentação dentro do
-AE antes de virar contrato. Deve entrar com fallback para cor sólida quando a
-escrita falhar.
+### Gradientes — bloqueado pela API, não por falta de trabalho
+Verificado no 26.3: `ADBE Vector Grad Colors` tem `propertyValueType` igual a
+`NO_VALUE`. Não existe valor para ler nem escrever — não é questão de descobrir o
+formato do array. Hoje a ferramenta achata para cor sólida.
+
+As saídas possíveis, todas com custo: duas camadas com máscara de gradiente
+(animável, feio por dentro), animation preset `.ffx` gravado à mão (não escala, um
+arquivo por gradiente), ou importar SVG/AI e deixar o AE converter (perde controle).
+Precisa de uma decisão consciente antes de virar código.
 
 ### Vetorização local como complemento da IA
 Hoje a geometria vem inteira do modelo, que é bom em semântica (o que é isso, como
@@ -125,12 +166,6 @@ exige assinar com o ZXPSignCmd da Adobe e um certificado.
 ### Tema do painel
 O painel usa cores fixas próximas ao cinza médio do AE. Sincronizar de verdade exige
 ouvir `com.adobe.csxs.events.ThemeColorChanged` e reagir.
-
-### Servidor MCP
-Um servidor MCP local expondo "construir cena", "ler comp atual", "aplicar preset"
-deixaria o Claude Code dirigir o After Effects de forma agêntica, além do painel.
-A arquitetura já suporta: seria mais um consumidor do mesmo SceneSpec. Fica para
-depois de o caminho do painel estar validado.
 
 ### Além do Image → Shapes
 O que a arquitetura destrava sem grande esforço adicional, já que tudo é SceneSpec

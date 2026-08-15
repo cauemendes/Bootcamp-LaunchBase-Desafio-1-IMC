@@ -12,6 +12,7 @@
 
 //@include "lib/util.jsx"
 //@include "lib/ae-shape.jsx"
+//@include "lib/ae-font.jsx"
 //@include "lib/ae-text.jsx"
 
 /*global app, vec, CompItem*/

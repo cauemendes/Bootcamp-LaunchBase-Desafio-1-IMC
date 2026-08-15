@@ -5,12 +5,8 @@
  * camada separado. Por isso o core já separa os elementos de texto em camadas
  * próprias antes de chegar aqui.
  *
- * ── Fonte é o ponto frágil ────────────────────────────────────────────────────
- * O modelo devolve um palpite de família de fonte olhando o desenho das letras. Se
- * essa fonte não estiver instalada, o AE substitui em silêncio e o layout sai
- * diferente do original — sem erro, sem aviso. Para que isso não passe despercebido,
- * a função lê a fonte de volta depois de gravar e reporta quando a substituição
- * aconteceu, e o painel mostra isso pro usuário.
+ * A resolução de fonte mora em `ae-font.jsx`: no AE 2026 `fontFamily` é somente
+ * leitura, e definir fonte exige o nome PostScript. Veja lá o porquê.
  */
 
 /*global ParagraphJustification*/
@@ -36,6 +32,10 @@ vec.addTextLayer = function (comp, spec, opts) {
   layer.name = vec.safeName(spec.name, "Texto");
 
   var textProp = layer.property("ADBE Text Properties").property("ADBE Text Document");
+
+  // O TextDocument é um snapshot: mexer em `doc` não altera nada até o setValue.
+  // Por isso a fonte entra no mesmo objeto, antes de gravar — dois setValue
+  // seguidos custariam duas atualizações do layout do texto.
   var doc = textProp.value;
 
   doc.fontSize = spec.fontSize;
@@ -48,19 +48,7 @@ vec.addTextLayer = function (comp, spec, opts) {
     doc.tracking = spec.letterSpacing;
   }
 
-  // fontFamily/fontStyle existem a partir do AE 2020. São bem mais confiáveis que
-  // `doc.font`, que exige o nome PostScript exato — algo que o modelo não tem como
-  // saber olhando uma imagem.
-  var requestedFamily = spec.fontFamily;
-  if (requestedFamily) {
-    try {
-      doc.fontFamily = requestedFamily;
-      if (spec.weight) doc.fontStyle = spec.weight;
-    } catch (e) {
-      // Fonte inexistente: segue com a padrão em vez de abortar a cena inteira.
-      requestedFamily = null;
-    }
-  }
+  var fontWarning = vec.applyFont(doc, spec.fontFamily, spec.weight);
 
   textProp.setValue(doc);
 
@@ -70,35 +58,5 @@ vec.addTextLayer = function (comp, spec, opts) {
   transform.property("ADBE Position").setValue([spec.x, spec.y]);
   transform.property("ADBE Opacity").setValue(spec.opacity);
 
-  return { layer: layer, fontWarning: vec.checkFontSubstitution(textProp, spec.fontFamily) };
-};
-
-/**
- * Compara a fonte pedida com a que o AE de fato aplicou.
- *
- * A comparação ignora caixa e espaços porque o AE normaliza nomes de família de
- * formas que não valem a pena adivinhar ("Helvetica Neue" vs "HelveticaNeue").
- */
-vec.checkFontSubstitution = function (textProp, requestedFamily) {
-  if (!requestedFamily) return null;
-
-  var applied;
-  try {
-    applied = textProp.value.fontFamily;
-  } catch (e) {
-    return null; // versão do AE sem fontFamily — não dá pra verificar
-  }
-
-  if (!applied) return null;
-
-  var norm = function (s) {
-    return String(s).toLowerCase().replace(/[\s_-]+/g, "");
-  };
-
-  if (norm(applied) === norm(requestedFamily)) return null;
-
-  return (
-    'A fonte "' + requestedFamily + '" não está instalada — o After Effects usou "' +
-    applied + '". O layout do texto vai diferir da imagem original.'
-  );
+  return { layer: layer, fontWarning: fontWarning };
 };

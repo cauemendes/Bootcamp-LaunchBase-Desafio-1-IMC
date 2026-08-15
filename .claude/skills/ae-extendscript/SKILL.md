@@ -119,16 +119,46 @@ retorna `null` em silêncio, e o erro só aparece uma linha depois como
 `TypeError: null is not an object`. Ao caçar um matchname suspeito, cheque o retorno
 antes de encadear — é a diferença entre "não existe" e "existe mas recusou o valor".
 
-## Texto: `fontFamily` é somente leitura
+## Texto e fontes (verificado no 26.3)
 
-No After Effects 2026 (26.3), escrever em `textDocument.fontFamily` lança
-`Unable to set "fontFamily". It is a readOnly attribute.` — verificado. O mesmo vale
-para `fontStyle`.
+Escrever em `textDocument.fontFamily` lança
+`Unable to set "fontFamily". It is a readOnly attribute.` O mesmo vale para
+`fontStyle`. O caminho válido é `textDocument.font`, que espera o **nome PostScript**
+(`HelveticaNeue-Bold`), não o nome de família.
 
-O caminho válido é `textDocument.font`, que espera o **nome PostScript**
-(`HelveticaNeue-Bold`), não o nome de família. Para chegar nele a partir de um nome
-humano, use `app.fonts`. Veja `packages/jsx/selftest-fonts.jsx` para a forma exata da
-API nesta versão.
+`TextDocument` é um **snapshot**: alterar o objeto não muda nada até `setValue`.
+Junte todas as mudanças num objeto só e grave uma vez — cada `setValue` recalcula o
+layout do texto.
+
+### `app.fonts` no 26.3
+
+```
+allFonts                            Array de FAMÍLIAS, não de fontes ⚠️
+getFontsByFamilyNameAndStyleName()  → Array de fontes. Existe e funciona.
+getFontsByPostScriptName()          → Array de fontes. Existe e funciona.
+getFontByID()                       → uma fonte
+missingOrSubstitutedFonts           Array do que o AE substituiu
+fontsDuplicateByPostScriptName      famílias em conflito
+mruFontFamilyList                   últimas usadas
+```
+
+⚠️ **`allFonts` é aninhado.** Cada item é um array com as variantes de uma família:
+
+```javascript
+app.fonts.allFonts[0]              // → [ABCDiatype-Regular, ABCDiatype-Bold, …]
+app.fonts.allFonts[0].familyName   // → undefined  (é um array, não uma fonte)
+app.fonts.allFonts[0][0].familyName // → "ABC Diatype"
+```
+
+Ler direto devolve `undefined` em silêncio, não erro. Para percorrer, aninhe dois
+laços — ver `vec.buildFontIndex()` em `packages/jsx/lib/ae-font.jsx`.
+
+`getFontsByFamilyName` **não existe** nesta versão. Use
+`getFontsByFamilyNameAndStyleName(familia, estilo)`, que devolve array — cheque
+`length` antes de indexar.
+
+Para detectar substituição de fonte, `app.fonts.missingOrSubstitutedFonts` é mais
+confiável que comparar nomes antes e depois: é o próprio AE reportando.
 
 ## Keyframes e easing
 
