@@ -33,6 +33,7 @@ var vecBridge = {
   errors: 0,
   ui: null,
   log: [],
+  lastHeartbeat: 0,
   POLL_MS: 350,
 };
 
@@ -122,6 +123,45 @@ function vecReadCommand(file) {
 }
 
 /**
+ * Marca de vida, gravada periodicamente na pasta da ponte.
+ *
+ * Existe porque não dá para perguntar "você está aí?" de dentro do After Effects:
+ * um script rodando bloqueia a thread principal, que é a mesma que executa o
+ * polling do painel. Qualquer diagnóstico que envie um comando e espere a resposta
+ * trava justamente quem deveria responder.
+ *
+ * Com o heartbeat, basta olhar a idade do arquivo — sem esperar, sem bloquear.
+ * O lado Node também usa isso para saber se vale a pena tentar um comando.
+ */
+function vecBridgeHeartbeat(dirs) {
+  var agora = new Date().getTime();
+
+  // Escrever a cada ciclo de 350ms seria disco à toa; 2s dá resolução de sobra
+  // para diferenciar "vivo" de "morto".
+  if (vecBridge.lastHeartbeat && agora - vecBridge.lastHeartbeat < 2000) return;
+  vecBridge.lastHeartbeat = agora;
+
+  try {
+    var tmp = new File(dirs.base.fsName + "/heartbeat.json.tmp");
+    tmp.encoding = "UTF-8";
+    if (!tmp.open("w")) return;
+    tmp.write(
+      '{"at":' + agora +
+      ',"afterEffects":' + vec.quote(app.version) +
+      ',"processed":' + vecBridge.processed +
+      ',"errors":' + vecBridge.errors + "}"
+    );
+    tmp.close();
+
+    var alvo = new File(dirs.base.fsName + "/heartbeat.json");
+    if (alvo.exists) alvo.remove();
+    tmp.rename("heartbeat.json");
+  } catch (e) {
+    // Heartbeat é diagnóstico; falhar aqui não pode derrubar o polling.
+  }
+}
+
+/**
  * Um ciclo de polling. Chamado por `app.scheduleTask` — precisa ser global.
  */
 function vecBridgePoll() {
@@ -134,6 +174,8 @@ function vecBridgePoll() {
     vecBridgeLog("pasta da ponte inacessível: " + e.toString());
     return;
   }
+
+  vecBridgeHeartbeat(dirs);
 
   var arquivos = dirs.cmd.getFiles("*.json");
   if (!arquivos || arquivos.length === 0) return;
@@ -158,7 +200,15 @@ function vecBridgePoll() {
         error: resposta.error,
       });
     } catch (e) {
-      vecBridgeLog("falhei ao responder: " + e.toString());
+      // Sem uma pista do que estava sendo serializado, um erro aqui é
+      // indiagnosticável — foi exatamente o que aconteceu na primeira rodada.
+      var pista;
+      try {
+        pista = " · ao serializar: " + String(vec.json(resposta)).substring(0, 200);
+      } catch (e2) {
+        pista = " · a própria serialização falhou: " + e2.toString();
+      }
+      vecBridgeLog("falhei ao responder: " + e.toString() + pista);
       continue;
     }
 

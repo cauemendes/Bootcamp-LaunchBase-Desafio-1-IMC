@@ -8,11 +8,12 @@
  *   1. A permissão de escrita está ligada nas preferências?
  *   2. A pasta da ponte existe e dá pra escrever nela?
  *   3. O painel está instalado onde deveria?
- *   4. O painel está aberto e respondendo?
+ *   4. O painel está aberto e dando sinal de vida?
  *
- * O passo 4 é o teste de verdade: escreve um comando na pasta e espera a resposta,
- * exatamente como o servidor MCP faz. Se ele passa, a ponte inteira funciona e o
- * problema está do lado do Node.
+ * O passo 4 lê o heartbeat que o painel grava a cada 2s. Não dá para enviar um
+ * comando e esperar a resposta daqui: um script em execução bloqueia a thread
+ * principal do After Effects, que é a mesma que roda o polling do painel — o
+ * diagnóstico travaria justamente quem deveria responder.
  *
  * Arquivo único e sem includes de propósito — se o diagnóstico dependesse das
  * bibliotecas, ele falharia junto com o que está tentando diagnosticar.
@@ -147,9 +148,13 @@
   secao("3. Painel instalado");
 
   var candidatos = [];
+
   try {
     var apps = new Folder("/Applications").getFiles(function (f) {
-      return f instanceof Folder && f.name.indexOf("Adobe After Effects") === 0;
+      // ⚠️ Folder.name vem com URI-encoding: "Adobe%20After%20Effects%202026".
+      // Comparar direto com "Adobe After Effects" nunca casa — e falha em
+      // silêncio, porque getFiles simplesmente devolve lista vazia.
+      return f instanceof Folder && decodeURI(f.name).indexOf("Adobe After Effects") === 0;
     });
     for (var i = 0; i < apps.length; i++) {
       candidatos.push(apps[i].fsName + "/Scripts/ScriptUI Panels");
@@ -158,103 +163,90 @@
     info("não consegui listar /Applications: " + e.toString());
   }
 
+  // O After Effects também carrega painéis da pasta do usuário, que não exige
+  // permissão de administrador.
+  candidatos.push(Folder.userData.fsName + "/Adobe/After Effects/26.3/Scripts/ScriptUI Panels");
+  candidatos.push(Folder.myDocuments.fsName + "/Adobe/After Effects 2026/Scripts/ScriptUI Panels");
+
   var achouPainel = false;
 
   for (var c = 0; c < candidatos.length; c++) {
     var painel = new File(candidatos[c] + "/bridge-panel.jsx");
-    if (painel.exists) {
-      achouPainel = true;
-      ok("bridge-panel.jsx em " + candidatos[c]);
+    if (!painel.exists) continue;
 
-      // Se o arquivo ainda tiver includes, ele depende da pasta lib/ estar do lado —
-      // e é justamente essa dependência que costuma quebrar depois da cópia.
-      try {
-        painel.encoding = "UTF-8";
-        painel.open("r");
-        var conteudo = painel.read();
-        painel.close();
+    achouPainel = true;
+    ok("bridge-panel.jsx em " + candidatos[c]);
 
-        if (conteudo.indexOf("@include") !== -1 || conteudo.indexOf("#include") !== -1) {
-          var lib = new Folder(candidatos[c] + "/lib");
-          if (lib.exists) {
-            info("é a versão com includes, e a pasta lib/ está presente");
-          } else {
-            falha("o painel usa includes mas a pasta lib/ não está do lado dele",
-              "rode `bash scripts/install-bridge.sh` de novo — a versão nova gera " +
-                "um arquivo único, sem includes");
-          }
-        } else {
-          info("é a versão empacotada (arquivo único, sem includes) — bom");
-        }
-      } catch (e) {
-        info("não consegui ler o arquivo do painel: " + e.toString());
+    // Um arquivo ainda com includes depende da pasta lib/ ao lado — e é essa
+    // dependência que quebra depois da cópia para dentro do aplicativo.
+    try {
+      painel.encoding = "UTF-8";
+      painel.open("r");
+      var conteudo = painel.read();
+      painel.close();
+
+      if (conteudo.indexOf("@include") !== -1 || conteudo.indexOf("#include") !== -1) {
+        falha("este painel ainda usa includes (versão antiga)",
+          "rode `bash scripts/install-bridge.sh` de novo — a versão nova gera um " +
+            "arquivo único, sem includes");
+      } else {
+        info("versão empacotada, arquivo único — correto");
       }
+    } catch (e) {
+      info("não consegui ler o arquivo do painel: " + e.toString());
     }
   }
 
   if (!achouPainel) {
     falha("não encontrei bridge-panel.jsx em nenhuma pasta ScriptUI Panels",
-      "rode `bash scripts/install-bridge.sh` no terminal");
+      "se o painel está aberto no menu Window, ele foi instalado em outro lugar — " +
+        "rode `bash scripts/install-bridge.sh` para padronizar");
     for (var d = 0; d < candidatos.length; d++) info("procurei em: " + candidatos[d]);
   }
 
   // ---- 4. o teste que importa: a ponte responde? -------------------------
 
-  secao("4. A ponte está respondendo?");
+  secao("4. A ponte está viva?");
 
   if (!pastasOk) {
     info("pulado — as pastas não estão acessíveis");
   } else {
-    var id = "diag-" + new Date().getTime();
-    var enviado = false;
+    // Não dá para enviar um ping e esperar a resposta daqui: um script em execução
+    // bloqueia a thread principal do After Effects, que é a mesma que roda o
+    // polling do painel. O diagnóstico travaria justamente quem deveria responder.
+    //
+    // Por isso o painel grava um heartbeat a cada 2s, e aqui só olhamos a idade.
+    var hb = new File(basePath + "/heartbeat.json");
 
-    try {
-      var cmdTmp = new File(basePath + "/cmd/" + id + ".json.tmp");
-      cmdTmp.encoding = "UTF-8";
-      cmdTmp.open("w");
-      cmdTmp.write('{"id":"' + id + '","tool":"ping","args":{}}');
-      cmdTmp.close();
-      cmdTmp.rename(id + ".json");
-      enviado = true;
-      info("comando ping enviado, esperando até 5s…");
-    } catch (e) {
-      falha("não consegui enviar o comando de teste: " + e.toString());
-    }
-
-    if (enviado) {
-      var resposta = null;
-
-      // O painel faz polling a cada 350ms; 5s dá margem de sobra.
-      for (var tentativa = 0; tentativa < 25; tentativa++) {
-        $.sleep(200);
-        var arquivo = new File(basePath + "/res/" + id + ".json");
-        if (arquivo.exists) {
-          try {
-            arquivo.encoding = "UTF-8";
-            arquivo.open("r");
-            resposta = arquivo.read();
-            arquivo.close();
-            arquivo.remove();
-          } catch (e) {
-            resposta = "(erro ao ler: " + e.toString() + ")";
-          }
-          break;
-        }
+    if (!hb.exists) {
+      falha("o painel nunca gravou sinal de vida",
+        "abra Window → bridge-panel.jsx e confirme que mostra \"ouvindo\"");
+      info("se o painel já está aberto, feche e abra de novo — a versão antiga " +
+        "não gravava heartbeat");
+    } else {
+      var conteudoHb = "";
+      try {
+        hb.encoding = "UTF-8";
+        hb.open("r");
+        conteudoHb = hb.read();
+        hb.close();
+      } catch (e) {
+        info("não consegui ler o heartbeat: " + e.toString());
       }
 
-      if (resposta) {
-        ok("a ponte respondeu");
-        info(resposta.length > 300 ? resposta.substring(0, 300) + "…" : resposta);
-        info("→ a ponte funciona. Se o Claude Code ainda falha, o problema é do lado do Node.");
-      } else {
-        falha("nenhuma resposta em 5 segundos",
-          "o painel provavelmente não está aberto ou não está ouvindo");
-        info("abra Window → bridge-panel.jsx e confirme que mostra \"ouvindo\"");
+      var marca = /"at":(\d+)/.exec(conteudoHb);
+      var idade = marca ? (new Date().getTime() - parseInt(marca[1], 10)) / 1000 : null;
 
-        // Limpa o comando: deixá-lo faria o painel executá-lo ao abrir depois.
-        try {
-          new File(basePath + "/cmd/" + id + ".json").remove();
-        } catch (e) {}
+      if (idade === null) {
+        falha("heartbeat ilegível: " + conteudoHb.substring(0, 120));
+      } else if (idade < 15) {
+        ok("painel vivo — último sinal há " + idade.toFixed(1) + "s");
+        info(conteudoHb);
+        info("→ a ponte está funcionando. Se o Claude Code ainda falha, o problema " +
+          "é do lado do Node.");
+      } else {
+        falha("último sinal do painel há " + Math.round(idade) + "s — parado",
+          "o painel foi fechado, ou o botão está em \"Parar\"");
       }
     }
   }
