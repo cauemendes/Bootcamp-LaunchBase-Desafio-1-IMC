@@ -335,30 +335,45 @@
       return "aceitos";
     });
 
-    check("Texto", "fontFamily / fontStyle (AE 2020+)", function () {
+    checkThrows("Texto", "fontFamily deve ser somente leitura no 26.3", function () {
       var tp = textLayer.property("ADBE Text Properties").property("ADBE Text Document");
       var doc = tp.value;
       doc.fontFamily = "Helvetica";
-      doc.fontStyle = "Bold";
       tp.setValue(doc);
-      return "aplicado — fonte resultante: " + tp.value.fontFamily + " / " + tp.value.fontStyle;
     });
 
-    check("Texto", "Detecção de substituição de fonte", function () {
-      var tp = textLayer.property("ADBE Text Properties").property("ADBE Text Document");
-      var doc = tp.value;
-      doc.fontFamily = "Fonte Que Nao Existe 12345";
-      tp.setValue(doc);
-      var aplicada = tp.value.fontFamily;
-      return 'pedi uma fonte inexistente, o AE aplicou "' + aplicada +
-        '" — a detecção ' + (aplicada !== "Fonte Que Nao Existe 12345" ? "FUNCIONA" : "NÃO funciona");
-    });
-
-    check("Texto", "app.fonts disponível (para listar fontes instaladas)", function () {
-      if (app.fonts && app.fonts.allFonts) {
-        return app.fonts.allFonts.length + " fontes visíveis ao script";
+    check("Texto", "allFonts é aninhado: famílias, não fontes", function () {
+      var todas = app.fonts.allFonts;
+      var primeira = todas[0];
+      if (!(primeira instanceof Array)) {
+        return "ATENÇÃO: nesta versão allFonts NÃO é aninhado — a varredura precisa mudar";
       }
-      throw new Error("app.fonts não existe nesta versão");
+      return todas.length + " famílias; a primeira tem " + primeira.length +
+        " variantes; postScriptName da primeira variante: " + primeira[0].postScriptName;
+    });
+
+    check("Texto", "getFontsByFamilyNameAndStyleName", function () {
+      var achadas = app.fonts.getFontsByFamilyNameAndStyleName("Arial", "Regular");
+      if (!achadas || achadas.length === 0) throw new Error("Arial Regular não foi encontrada");
+      return "Arial Regular → " + achadas[0].postScriptName;
+    });
+
+    check("Texto", "Definir a fonte por doc.font (nome PostScript)", function () {
+      var tp = textLayer.property("ADBE Text Properties").property("ADBE Text Document");
+      var achadas = app.fonts.getFontsByFamilyNameAndStyleName("Arial", "Bold");
+      if (!achadas || achadas.length === 0) throw new Error("Arial Bold não está instalada");
+
+      var doc = tp.value;
+      doc.font = achadas[0].postScriptName;
+      tp.setValue(doc);
+
+      return "gravado: " + tp.value.font;
+    });
+
+    check("Texto", "missingOrSubstitutedFonts (detecção de substituição)", function () {
+      var lista = app.fonts.missingOrSubstitutedFonts;
+      if (!lista) throw new Error("propriedade não existe nesta versão");
+      return lista.length + " fonte(s) substituída(s) no projeto";
     });
 
     // ---- gradiente (esperado ser parcial) ---------------------------------
