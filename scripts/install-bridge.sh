@@ -50,6 +50,17 @@ echo "▸ After Effects: $AE_APP"
 
 # ---- copiar ------------------------------------------------------------------
 
+# O painel vai como ARQUIVO ÚNICO, com os includes já resolvidos.
+#
+# Copiar `bridge-panel.jsx` mais a pasta `lib/` parecia mais simples, mas a
+# resolução de //@include muda de comportamento quando o script está dentro do
+# pacote do aplicativo — e quando falha, falha em silêncio: o painel abre, a
+# interface aparece, e só na primeira chamada é que se descobre que as funções não
+# existem. Empacotar elimina a classe inteira de erro.
+echo "▸ Empacotando o painel num arquivo só…"
+BUNDLE="$REPO_ROOT/dist/bridge-panel.jsx"
+node "$REPO_ROOT/scripts/bundle-jsx.mjs" "$JSX_DIR/bridge-panel.jsx" "$BUNDLE"
+
 # A pasta fica dentro do aplicativo e normalmente exige permissão de administrador.
 # Testar antes evita uma cópia pela metade.
 if [ -w "$PANELS_DIR" ]; then
@@ -59,11 +70,12 @@ else
   SUDO="sudo"
 fi
 
+# Remove a instalação antiga com includes, se existir. Deixar a pasta lib/ para trás
+# faria o painel velho continuar carregável e confundir o diagnóstico.
 $SUDO rm -rf "$PANELS_DIR/lib"
-$SUDO cp "$JSX_DIR/bridge-panel.jsx" "$PANELS_DIR/"
-$SUDO cp -R "$JSX_DIR/lib" "$PANELS_DIR/"
+$SUDO cp "$BUNDLE" "$PANELS_DIR/bridge-panel.jsx"
 
-echo "▸ Instalado em: $PANELS_DIR"
+echo "▸ Instalado em: $PANELS_DIR/bridge-panel.jsx"
 
 cat <<'EOF'
 

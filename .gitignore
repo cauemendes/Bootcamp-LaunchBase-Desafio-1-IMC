@@ -12,3 +12,6 @@ packages/cep/jsx/
 Thumbs.db
 .env
 .env.local
+
+# Bundle do ExtendScript gerado pela instalação.
+dist/
