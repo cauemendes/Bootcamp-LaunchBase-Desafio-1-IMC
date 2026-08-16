@@ -236,3 +236,24 @@ test("brandSummary cabe em poucas linhas e lista os nomes usáveis", () => {
 test("brandSummary avisa quando não há fonte definida", () => {
   assert.match(brandSummary({ colors: { primary: "#fff" } }), /texto sai em Arial/);
 });
+
+test("brandSummary carrega as regras de uso do manual", () => {
+  // Um manual real tem cor que só vale em certo contexto. É a regra que se viola sem
+  // perceber, porque o hexadecimal está certo — só o lugar é que não.
+  const texto = brandSummary({
+    ...MARCA,
+    colors: { ...MARCA.colors, "primary-text": "#f55600" },
+    notes: ["primary-text só como cor de texto sobre paper"],
+  });
+
+  assert.match(texto, /Regras de uso/);
+  assert.match(texto, /só como cor de texto sobre paper/);
+});
+
+test("notes malformado é erro, não aviso", () => {
+  // Silenciar uma regra de marca inválida é pior que recusar: o usuário acha que
+  // registrou a restrição e ela não existe.
+  assert.equal(validateBrand({ ...MARCA, notes: "uma regra só" }).ok, false);
+  assert.equal(validateBrand({ ...MARCA, notes: [42] }).ok, false);
+  assert.equal(validateBrand({ ...MARCA, notes: ["ok"] }).ok, true);
+});

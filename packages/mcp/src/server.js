@@ -269,6 +269,15 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .string()
           .optional()
           .describe("Fonte para texto sem família definida. Padrão Arial."),
+        notes: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "Regras de uso que o manual da marca traz e que uma paleta sozinha não " +
+              'expressa. Ex.: "smile-orange-text só como cor de texto sobre off-white", ' +
+              '"nunca usar as cores terciárias em área grande". Registre o que estiver ' +
+              "no guia — é a parte que se viola sem perceber, porque o hex está certo."
+          ),
         snapTolerance: z
           .number()
           .optional()

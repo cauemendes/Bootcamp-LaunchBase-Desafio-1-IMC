@@ -86,6 +86,12 @@ export function validateBrand(brand) {
     warnings.push("snapTolerance inválido — usando o padrão");
   }
 
+  if (brand.notes != null) {
+    if (!Array.isArray(brand.notes) || brand.notes.some((n) => typeof n !== "string")) {
+      errors.push("notes precisa ser uma lista de textos");
+    }
+  }
+
   const semCores = colors == null || Object.keys(colors).length === 0;
   const semFontes = fonts == null || Object.keys(fonts).length === 0;
   if (semCores && semFontes) {
@@ -118,6 +124,7 @@ function readBrand(brand) {
     name: typeof brand?.name === "string" ? brand.name : null,
     colors,
     fonts,
+    notes: Array.isArray(brand?.notes) ? brand.notes.filter((n) => typeof n === "string") : [],
     fallbackFont:
       typeof brand?.fallbackFont === "string" && brand.fallbackFont !== ""
         ? brand.fallbackFont
@@ -292,6 +299,14 @@ export function brandSummary(brand) {
     );
   } else {
     linhas.push(`Fontes: nenhuma definida — texto sai em ${b.fallbackFont}`);
+  }
+
+  // As regras de uso vêm antes da explicação do formato: um manual de marca real tem
+  // cor que só vale em certo contexto — "este laranja só como texto sobre off-white" —
+  // e essa é a parte que um modelo viola sem perceber, porque o hex está certo.
+  if (b.notes.length) {
+    linhas.push("Regras de uso (siga à risca):");
+    for (const nota of b.notes) linhas.push(`  • ${nota}`);
   }
 
   linhas.push(
