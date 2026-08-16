@@ -111,21 +111,47 @@ vec.json = function (value) {
   return "null";
 };
 
-var ESCAPES = { "\b": "\\b", "\t": "\\t", "\n": "\\n", "\f": "\\f", "\r": "\\r", '"': '\\"', "\\": "\\\\" };
-
+/**
+ * Escapa uma string para JSON.
+ *
+ * ── Por que não uma tabela de escape ──────────────────────────────────────────
+ * A versão anterior usava `var ESCAPES = {...}` e consultava `ESCAPES[ch]`. Isso
+ * quebrou dentro do After Effects, e de um jeito difícil de rastrear: um objeto comum
+ * herda de `Object.prototype`, então `ESCAPES[ch]` pode devolver um **método
+ * herdado** em vez de `undefined`. O `if` aceita a função (é truthy) e a
+ * concatenação seguinte estoura com
+ *
+ *     Object of type Function found where a Number, Array, or Property is needed
+ *
+ * — uma mensagem que não menciona string, nem JSON, nem escape, e que levou a
+ * ponte inteira a parecer um problema de permissão de arquivo.
+ *
+ * Basta um script instalado no After Effects ter feito `Object.prototype.x = ...`
+ * alguma vez para envenenar qualquer objeto usado como mapa. Comparação direta não
+ * consulta cadeia de protótipo nenhuma, então o problema deixa de existir.
+ */
 vec.quote = function (str) {
+  var s = String(str);
   var out = '"';
-  for (var i = 0; i < str.length; i++) {
-    var ch = str.charAt(i);
-    if (ESCAPES[ch]) {
-      out += ESCAPES[ch];
-    } else if (ch < " ") {
+
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i);
+
+    if (ch === '"') out += '\\"';
+    else if (ch === "\\") out += "\\\\";
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\t") out += "\\t";
+    else if (ch === "\b") out += "\\b";
+    else if (ch === "\f") out += "\\f";
+    else if (ch < " ") {
       var code = ch.charCodeAt(0).toString(16);
       out += "\\u" + "0000".substring(code.length) + code;
     } else {
       out += ch;
     }
   }
+
   return out + '"';
 };
 
@@ -1574,7 +1600,11 @@ vec.serializable = function (value) {
  * @returns {{ok: Boolean, result: *, error: String}}
  */
 vec.runTool = function (name, args) {
-  var fn = vec.tools[name];
+  // `vec.tools[name]` sozinho consultaria a cadeia de protótipo: um pedido para a
+  // ferramenta "toString" ou "valueOf" acharia um método herdado, passaria no teste
+  // de `typeof === "function"` e seria executado. O nome vem de fora, então isso é
+  // entrada não confiável escolhendo o que rodar dentro do After Effects.
+  var fn = vec.tools.hasOwnProperty(name) ? vec.tools[name] : null;
 
   if (typeof fn !== "function") {
     var disponiveis = [];

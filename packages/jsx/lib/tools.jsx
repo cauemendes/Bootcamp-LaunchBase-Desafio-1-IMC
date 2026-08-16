@@ -218,7 +218,11 @@ vec.serializable = function (value) {
  * @returns {{ok: Boolean, result: *, error: String}}
  */
 vec.runTool = function (name, args) {
-  var fn = vec.tools[name];
+  // `vec.tools[name]` sozinho consultaria a cadeia de protótipo: um pedido para a
+  // ferramenta "toString" ou "valueOf" acharia um método herdado, passaria no teste
+  // de `typeof === "function"` e seria executado. O nome vem de fora, então isso é
+  // entrada não confiável escolhendo o que rodar dentro do After Effects.
+  var fn = vec.tools.hasOwnProperty(name) ? vec.tools[name] : null;
 
   if (typeof fn !== "function") {
     var disponiveis = [];

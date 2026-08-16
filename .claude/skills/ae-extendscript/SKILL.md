@@ -26,6 +26,39 @@ Não é JavaScript moderno com algumas coisas faltando — é uma linguagem de 1
 
 Neste projeto, tudo o que passa do ES3 puro está em `packages/jsx/lib/util.jsx`.
 
+## Nunca use objeto comum como mapa
+
+Este custou uma noite de diagnóstico e vale ler antes de escrever qualquer tabela de
+lookup.
+
+```javascript
+var ESCAPES = { "\n": "\\n", "\t": "\\t" };
+if (ESCAPES[ch]) out += ESCAPES[ch];      // ⚠️ arma armada
+```
+
+Um objeto comum herda de `Object.prototype`. Se **qualquer** script instalado no
+After Effects tiver feito `Object.prototype.x = function () {}` alguma vez — e
+scripts antigos de AE fazem isso o tempo todo — `ESCAPES[ch]` devolve o método
+herdado em vez de `undefined`. O `if` aceita (função é truthy) e a concatenação
+seguinte estoura com:
+
+```
+Object of type Function found where a Number, Array, or Property is needed
+```
+
+A mensagem não menciona string, nem objeto, nem lookup. Aponta para lugar nenhum.
+
+**O que fazer:** comparação direta (`if (ch === "\n")`) quando são poucos casos, ou
+`obj.hasOwnProperty(chave) ? obj[chave] : null` quando o mapa é grande. Vale para
+qualquer chave vinda de fora — nome de ferramenta, nome de propriedade, caractere.
+
+Como isso apareceu na prática: a ponte com o Claude Code parecia um problema de
+permissão de arquivo. Todo comando dava timeout, o painel dizia "falhei ao
+responder", e a suspeita passou por permissão de scripting, escrita em subpasta e
+`rename()` — três hipóteses erradas — porque a resposta nunca chegava a ser montada.
+O que localizou foi instrumentar por etapa e usar `vec.describeError`, que anexa
+`arquivo:linha`. `e.toString()` sozinho esconde a linha.
+
 ## Regra de ouro: lógica não pertence aqui
 
 O ExtendScript deve ser fino e mecânico. Qualquer coisa que dê pra calcular sem o
