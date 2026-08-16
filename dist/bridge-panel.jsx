@@ -1686,22 +1686,89 @@ function vecBridgeStatus(text) {
   }
 }
 
-/** Escreve JSON de forma atômica: `.tmp` primeiro, depois renomeia. */
-function vecWriteResult(dirs, id, payload) {
-  var tmp = new File(dirs.res.fsName + "/" + id + ".json.tmp");
-  tmp.encoding = "UTF-8";
+/**
+ * Grava um arquivo e confere que o que ficou no disco é o que se pediu.
+ *
+ * `File.open`, `File.write` e `File.rename` do ExtendScript devolvem `false` em vez
+ * de lançar erro. Ignorar o retorno — que é o que quase todo código de AE faz — deixa
+ * a falha invisível: o arquivo aparece na pasta com zero byte e nada no log.
+ *
+ * A releitura existe porque nem o `write()` retornando `true` garante o conteúdo:
+ * foi assim que o AE 2026 gravou `.tmp` vazios sem reclamar de nada.
+ *
+ * @returns {String|null} null se deu certo; a explicação da falha se não deu.
+ */
+function vecWriteVerified(file, text) {
+  file.encoding = "UTF-8";
 
-  if (!tmp.open("w")) throw new Error("Não consegui escrever em " + tmp.fsName);
+  if (!file.open("w")) return "open('w') devolveu false em " + file.fsName;
 
+  var escreveu;
   try {
-    tmp.write(vec.json(payload));
+    escreveu = file.write(text);
   } finally {
-    tmp.close();
+    file.close();
   }
 
-  // O leitor faz polling nessa pasta; sem o rename ele pode pegar um JSON pela
-  // metade e o erro seria intermitente.
-  tmp.rename(id + ".json");
+  if (escreveu === false) return "write() devolveu false em " + file.fsName;
+
+  var conferencia = new File(file.fsName);
+  conferencia.encoding = "UTF-8";
+  if (!conferencia.open("r")) return "gravei mas não consigo reler " + file.fsName;
+
+  var lido;
+  try {
+    lido = conferencia.read();
+  } finally {
+    conferencia.close();
+  }
+
+  if (lido !== text) {
+    return "o disco ficou com " + lido.length + " de " + text.length +
+      " caracteres em " + file.fsName;
+  }
+
+  return null;
+}
+
+/**
+ * Escreve a resposta onde o servidor consiga achar.
+ *
+ * O caminho normal é `res/<id>.json`. O alternativo é `<id>.json` na raiz da pasta
+ * da ponte, e existe por observação, não por elegância: no AE 2026 do macOS a
+ * gravação dentro de `res/` falhou em silêncio — arquivos de zero byte, `rename()`
+ * devolvendo false — enquanto a mesma operação na raiz funcionou (é onde o heartbeat
+ * mora, e o heartbeat nunca falhou). Ler e apagar dentro de `cmd/` funciona; só a
+ * escrita em subpasta é que quebra.
+ *
+ * Não sei o motivo, e chutar um motivo errado custaria mais uma rodada de teste. O
+ * que dá pra fazer é tentar, conferir, e cair pra um caminho comprovado quando o
+ * primeiro não entregar. O log diz qual dos dois valeu — é isso que vai permitir
+ * simplificar isto depois, com evidência em vez de teoria.
+ *
+ * Sem o par `.tmp`+rename a leitura poderia pegar um JSON pela metade; quem cobre
+ * esse risco agora é o lado Node, que trata JSON incompleto como "ainda não chegou"
+ * e tenta de novo, em vez de estourar.
+ */
+function vecWriteResult(dirs, id, payload) {
+  var texto = vec.json(payload);
+
+  var principal = new File(dirs.res.fsName + "/" + id + ".json");
+  var problema = vecWriteVerified(principal, texto);
+  if (!problema) return;
+
+  try {
+    principal.remove();
+  } catch (e) {}
+
+  var alternativo = new File(dirs.base.fsName + "/res-" + id + ".json");
+  var problemaAlt = vecWriteVerified(alternativo, texto);
+
+  if (problemaAlt) {
+    throw new Error("res/: " + problema + " · raiz: " + problemaAlt);
+  }
+
+  vecBridgeLog("aviso: res/ não aceitou a escrita (" + problema + ") — respondi pela raiz");
 }
 
 function vecReadCommand(file) {

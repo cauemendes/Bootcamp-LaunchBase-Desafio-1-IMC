@@ -109,6 +109,66 @@ test("consumeJson trata JSON corrompido como erro, não como ausência", () => {
   assert.equal(fs.existsSync(target), false);
 });
 
+test("consumeJson com tolerateIncomplete trata JSON quebrado como 'ainda não chegou'", () => {
+  const dir = tempDir();
+  const target = path.join(dir, RES_DIR, "parcial.json");
+
+  // O painel escreve direto no arquivo final — não dá pra contar com rename dentro
+  // de res/ no AE 2026 — então quem faz polling pode chegar no meio da escrita.
+  fs.writeFileSync(target, '{"id":"abc","ok":true,"resu', "utf8");
+
+  assert.equal(consumeJson(target, { tolerateIncomplete: true }), null);
+  assert.equal(fs.existsSync(target), true, "precisa sobrar para a próxima tentativa");
+
+  fs.writeFileSync(target, '{"id":"abc","ok":true}', "utf8");
+  assert.deepEqual(consumeJson(target, { tolerateIncomplete: true }), { id: "abc", ok: true });
+});
+
+test("a ponte aceita resposta escrita na raiz quando res/ recusa a escrita", async () => {
+  const dir = tempDir();
+
+  // Painel falso que só consegue escrever na raiz — é o comportamento observado no
+  // After Effects 2026 do macOS, onde a gravação dentro de res/ falha em silêncio.
+  const timer = setInterval(() => {
+    for (const name of fs.readdirSync(path.join(dir, CMD_DIR))) {
+      if (!name.endsWith(".json")) continue;
+      const command = consumeJson(path.join(dir, CMD_DIR, name));
+      if (!command) continue;
+      writeJsonAtomic(path.join(dir, `res-${command.id}.json`), {
+        id: command.id,
+        ok: true,
+        result: { afterEffects: "26.3x87" },
+      });
+    }
+  }, 10);
+
+  try {
+    const bridge = new Bridge({ dir, timeoutMs: 2000 });
+    const { result } = await bridge.call("ping");
+    assert.deepEqual(result, { afterEffects: "26.3x87" });
+    assert.equal(fs.existsSync(path.join(dir, "res-")), false);
+  } finally {
+    clearInterval(timer);
+  }
+});
+
+test("clearStale limpa respostas de fallback na raiz, mas nunca o heartbeat", () => {
+  const dir = tempDir();
+  const velhoNaRaiz = path.join(dir, "res-antigo.json");
+  const heartbeat = path.join(dir, "heartbeat.json");
+  const antigo = new Date(Date.now() - 600_000);
+
+  writeJsonAtomic(velhoNaRaiz, { a: 1 });
+  writeJsonAtomic(heartbeat, { at: 1 });
+  fs.utimesSync(velhoNaRaiz, antigo, antigo);
+  fs.utimesSync(heartbeat, antigo, antigo);
+
+  assert.equal(clearStale(dir, 60_000), 1);
+  assert.equal(fs.existsSync(velhoNaRaiz), false);
+  // Apagar o heartbeat cegaria o diagnóstico de "o painel está vivo?".
+  assert.equal(fs.existsSync(heartbeat), true);
+});
+
 test("clearStale remove só o que passou da idade máxima", () => {
   const dir = tempDir();
   const novo = path.join(dir, CMD_DIR, "novo.json");

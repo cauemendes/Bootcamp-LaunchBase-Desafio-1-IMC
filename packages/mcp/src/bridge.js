@@ -6,11 +6,15 @@
  * à toa num comando demorado; um fixo longo faz toda leitura parecer lenta.
  */
 
+import fs from "node:fs";
+import path from "node:path";
+
 import {
   clearStale,
   commandPath,
   consumeJson,
   ensureBridgeDirs,
+  fallbackResultPath,
   newCommandId,
   resolveBridgeDir,
   resultPath,
@@ -79,15 +83,20 @@ export class Bridge {
 
   async #awaitResult(id, limit, tool) {
     const deadline = Date.now() + limit;
-    const target = resultPath(this.dir, id);
+
+    // Dois lugares porque o painel tem dois: `res/<id>.json` é o normal, e a raiz é
+    // o plano B de quando a subpasta recusa a escrita. Ver `fallbackResultPath`.
+    const alvos = [resultPath(this.dir, id), fallbackResultPath(this.dir, id)];
 
     // Sobe de 50ms até 500ms. Leitura simples volta na primeira ou segunda tentativa;
     // um build de cena grande não fica martelando o disco.
     let interval = 50;
 
     while (Date.now() < deadline) {
-      const payload = consumeJson(target);
-      if (payload) return payload;
+      for (const alvo of alvos) {
+        const payload = consumeJson(alvo, { tolerateIncomplete: true });
+        if (payload) return payload;
+      }
 
       await sleep(interval);
       interval = Math.min(interval * 1.4, 500);
@@ -98,9 +107,39 @@ export class Bridge {
     this.#discardCommand(id);
 
     throw new BridgeError(
-      `A ferramenta "${tool}" não respondeu em ${Math.round(limit / 1000)}s.\n\n${NOT_RUNNING_HINT}`,
+      `A ferramenta "${tool}" não respondeu em ${Math.round(limit / 1000)}s.\n\n` +
+        `${this.#diagnose()}\n\n${NOT_RUNNING_HINT}`,
       { kind: "timeout", detail: { tool, timeoutMs: limit } }
     );
+  }
+
+  /**
+   * O que o heartbeat diz sobre o painel.
+   *
+   * Um timeout tem dois significados muito diferentes — "o painel não está aberto" e
+   * "o painel está aberto e falhou ao responder" — e a mensagem genérica manda o
+   * usuário conferir justamente o que já está certo. O heartbeat separa os dois casos
+   * sem custo: é um arquivo que o painel reescreve a cada 2s.
+   */
+  #diagnose() {
+    let dados;
+    try {
+      dados = JSON.parse(fs.readFileSync(path.join(this.dir, "heartbeat.json"), "utf8"));
+    } catch {
+      return "O painel nunca deu sinal de vida nesta pasta — provavelmente não está aberto.";
+    }
+
+    const idade = (Date.now() - dados.at) / 1000;
+
+    if (idade > 15) {
+      return `O último sinal do painel foi há ${Math.round(idade)}s: ele foi fechado, está ` +
+        "em “parado”, ou o After Effects está com uma janela de diálogo aberta na frente " +
+        "(o polling não roda enquanto há diálogo modal).";
+    }
+
+    return `O painel ESTÁ vivo (sinal há ${idade.toFixed(1)}s, After Effects ${dados.afterEffects}) — ` +
+      "então ele recebeu o comando e falhou ao gravar a resposta. O log do painel, dentro " +
+      "do After Effects, mostra o erro exato.";
   }
 
   #discardCommand(id) {

@@ -190,7 +190,34 @@ if (f.exists && f.open("r")) {
 
 `File` e `Folder` usam URI-encoding em `.fsName` vs `.absoluteURI` — ao passar
 caminhos entre o painel e o ExtendScript, prefira `fsName` e teste com caminho que
-tenha espaço e acento.
+tenha espaço e acento. `Folder.name` também vem codificado: `"Adobe%20After%20Effects%202026"`.
+Compare sempre com `decodeURI(f.name)`, senão o filtro nunca casa — e `getFiles()`
+devolve lista vazia sem erro nenhum.
+
+### As funções de arquivo devolvem `false`, não lançam erro
+
+`open()`, `write()`, `rename()` e `remove()` sinalizam falha pelo retorno. Ignorar o
+retorno — que é o que quase todo código de AE por aí faz — transforma um erro de I/O
+em arquivo de zero byte e log vazio. Sempre confira:
+
+```javascript
+if (!f.open("w")) throw new Error("open falhou em " + f.fsName);
+if (f.write(texto) === false) throw new Error("write falhou");
+```
+
+### Escrita em subpasta pode falhar em silêncio (visto no 26.3, macOS)
+
+Gravar em `<pasta>/res/arquivo.json` produziu arquivos vazios e `rename()` devolvendo
+`false`, enquanto a mesma gravação em `<pasta>/arquivo.json` funcionou. Ler e apagar
+dentro de subpasta funcionava normalmente — só a escrita quebrava.
+
+Não há explicação confirmada. O que resolve na prática: **gravar, reler e comparar
+com o que se pretendia escrever**, caindo para a pasta raiz quando não bate. É o que
+`vecWriteVerified()` em `packages/jsx/bridge-panel.jsx` faz.
+
+Consequência de projeto: o padrão `.tmp` + `rename` para escrita atômica **não é
+confiável em subpasta**. Quem lê precisa tratar JSON incompleto como "ainda não
+chegou" e tentar de novo, em vez de estourar.
 
 ## Performance
 

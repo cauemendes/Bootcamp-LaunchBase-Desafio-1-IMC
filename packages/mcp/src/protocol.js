@@ -67,6 +67,18 @@ export function resultPath(dir, id) {
   return path.join(dir, RES_DIR, `${id}.json`);
 }
 
+/**
+ * Onde o painel responde quando a subpasta `res/` não aceita a escrita.
+ *
+ * No After Effects 2026 do macOS, gravar dentro de `res/` falhou em silêncio —
+ * arquivos de zero byte, `rename()` devolvendo false — enquanto a raiz da pasta da
+ * ponte funcionou normalmente. O painel tenta o caminho normal primeiro e só cai
+ * para cá quando confere o que gravou e vê que não colou.
+ */
+export function fallbackResultPath(dir, id) {
+  return path.join(dir, `res-${id}.json`);
+}
+
 /** Escreve JSON de forma atômica: `.tmp` e depois rename. */
 export function writeJsonAtomic(filePath, value) {
   const tmp = `${filePath}.tmp`;
@@ -79,9 +91,16 @@ export function writeJsonAtomic(filePath, value) {
  *
  * `null` quando o arquivo não existe ainda — que é o caso normal durante o polling,
  * não um erro. Um JSON ilegível, por outro lado, é erro: significa que a escrita
- * atômica falhou em algum lugar e é melhor saber do que engolir.
+ * falhou em algum lugar e é melhor saber do que engolir.
+ *
+ * `tolerateIncomplete` inverte essa escolha para quem está fazendo polling. O painel
+ * escreve o resultado direto no arquivo final (o par `.tmp`+rename não funciona
+ * dentro de `res/` no AE 2026), então existe uma janela em que o leitor pode chegar
+ * no meio da escrita. Nesse contexto, JSON quebrado quase sempre significa "ainda
+ * não terminou de chegar", e a resposta certa é tentar de novo no próximo ciclo —
+ * não estourar. O arquivo fica onde está para a próxima tentativa.
  */
-export function consumeJson(filePath) {
+export function consumeJson(filePath, { tolerateIncomplete = false } = {}) {
   let raw;
   try {
     raw = fs.readFileSync(filePath, "utf8");
@@ -90,17 +109,26 @@ export function consumeJson(filePath) {
     throw err;
   }
 
+  let parsed;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch (err) {
-    throw new Error(`Arquivo da ponte ilegível em ${filePath}: ${err.message}`);
-  } finally {
+    if (tolerateIncomplete) return null;
     try {
       fs.unlinkSync(filePath);
     } catch {
       // Já removido por outro leitor — não é problema.
     }
+    throw new Error(`Arquivo da ponte ilegível em ${filePath}: ${err.message}`);
   }
+
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // Já removido por outro leitor — não é problema.
+  }
+
+  return parsed;
 }
 
 /**
@@ -114,7 +142,10 @@ export function clearStale(dir, maxAgeMs = 60_000) {
   const now = Date.now();
   let removed = 0;
 
-  for (const sub of [CMD_DIR, RES_DIR]) {
+  // A raiz entra na varredura por causa das respostas de fallback (`res-<id>.json`),
+  // que não moram em nenhuma das subpastas. Só elas: `heartbeat.json` fica na raiz
+  // também e apagá-lo cegaria o diagnóstico de "o painel está vivo?".
+  for (const sub of [CMD_DIR, RES_DIR, "."]) {
     const full = path.join(dir, sub);
     let entries;
     try {
@@ -124,6 +155,8 @@ export function clearStale(dir, maxAgeMs = 60_000) {
     }
 
     for (const name of entries) {
+      if (sub === "." && !name.startsWith("res-")) continue;
+
       const file = path.join(full, name);
       try {
         if (now - fs.statSync(file).mtimeMs > maxAgeMs) {

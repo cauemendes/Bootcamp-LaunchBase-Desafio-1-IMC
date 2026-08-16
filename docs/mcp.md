@@ -64,10 +64,15 @@ interface — ele é pequeno).
 ### 5. Registrar o servidor no Claude Code
 
 ```bash
-claude mcp add vectorize-ae -- node /caminho/absoluto/para/o/repo/packages/mcp/bin/vectorize-ae-mcp.mjs
+claude mcp add vectorize-ae --scope user -- node /caminho/absoluto/para/o/repo/packages/mcp/bin/vectorize-ae-mcp.mjs
 ```
 
 Use o caminho absoluto — o Claude Code sobe o processo a partir de outra pasta.
+
+`--scope user` grava em `~/.claude.json`, que é o mesmo arquivo que o **aplicativo do
+Claude Code no Mac** lê. Com isso o servidor aparece em qualquer conversa, no
+aplicativo ou no terminal, sem precisar estar na pasta do repositório. Sem a flag, o
+registro fica preso a este projeto.
 
 Confira com `/mcp` dentro do Claude Code: `vectorize-ae` deve aparecer conectado.
 
@@ -131,10 +136,16 @@ encontram sem configuração). Dá pra mudar com `VECTORIZE_AE_BRIDGE_DIR`.
 
 Dois detalhes que evitam falhas intermitentes:
 
-- **Escrita atômica.** Os dois lados escrevem num `.tmp` e só então renomeiam. Sem
-  isso, quem faz polling pode ler um JSON pela metade.
 - **Id por comando.** O resultado carrega o id do comando. É o que impede o servidor
   de ler a resposta da pergunta anterior — a falha clássica desse tipo de ponte.
+- **Escrita conferida.** O lado Node escreve num `.tmp` e renomeia, que é o jeito
+  clássico de nunca expor arquivo pela metade. O painel **não pode** fazer o mesmo:
+  no After Effects 2026 do macOS, `rename()` dentro da subpasta `res/` falha em
+  silêncio e o arquivo fica com zero byte. Então o painel grava direto no arquivo
+  final, relê para conferir o que ficou no disco, e cai para a pasta raiz
+  (`res-<id>.json`) se a subpasta não aceitar. O servidor procura nos dois lugares e
+  trata JSON incompleto como "ainda não chegou", tentando de novo — em vez de
+  estourar.
 
 O painel também descarta comandos de sessões antigas ao iniciar. Um comando que
 ficou para trás seria executado quando o painel abrisse, mexendo no projeto sem
