@@ -206,37 +206,56 @@ function vecTextoResposta(payload) {
  * tenta de novo, em vez de estourar.
  */
 function vecWriteResult(dirs, id, payload) {
-  var texto = vecTextoResposta(payload);
-  var alternativo = new File(dirs.base.fsName + "/res-" + id + ".json");
+  // O rótulo de etapa existe porque o erro que apareceu aqui no AE 2026 —
+  // "Object of type Function found where a Number, Array, or Property is needed" —
+  // não descreve nada do que o código estava fazendo, e nem sempre traz linha. Sem
+  // saber em qual passo ele estoura, cada tentativa de correção é um chute.
+  var etapa = "início";
 
-  if (vecBridge.resSubpastaOk === false) {
-    var soAlternativo = vecTentarEscrever(alternativo, texto);
-    if (soAlternativo) throw new Error(soAlternativo);
-    return;
-  }
-
-  var principal = new File(dirs.res.fsName + "/" + id + ".json");
-  var problema = vecTentarEscrever(principal, texto);
-
-  if (!problema) {
-    vecBridge.resSubpastaOk = true;
-    return;
-  }
-
-  vecBridge.resSubpastaOk = false;
-
-  // Um arquivo pela metade em res/ seria lido pelo servidor como resposta válida.
   try {
-    if (principal.exists) principal.remove();
-  } catch (e) {}
+    etapa = "serializar a resposta";
+    var texto = vecTextoResposta(payload);
 
-  var problemaAlt = vecTentarEscrever(alternativo, texto);
-  if (problemaAlt) {
-    throw new Error("res/: " + problema + " · raiz: " + problemaAlt);
+    etapa = "montar o caminho da raiz";
+    var alternativo = new File(dirs.base.fsName + "/res-" + id + ".json");
+
+    if (vecBridge.resSubpastaOk === false) {
+      etapa = "gravar na raiz (res/ já reprovada antes)";
+      var soAlternativo = vecTentarEscrever(alternativo, texto);
+      if (soAlternativo) throw new Error(soAlternativo);
+      return;
+    }
+
+    etapa = "montar o caminho de res/";
+    var principal = new File(dirs.res.fsName + "/" + id + ".json");
+
+    etapa = "gravar em res/";
+    var problema = vecTentarEscrever(principal, texto);
+
+    if (!problema) {
+      vecBridge.resSubpastaOk = true;
+      return;
+    }
+
+    vecBridge.resSubpastaOk = false;
+
+    // Um arquivo pela metade em res/ seria lido pelo servidor como resposta válida.
+    etapa = "limpar o arquivo incompleto em res/";
+    try {
+      if (principal.exists) principal.remove();
+    } catch (eLimpeza) {}
+
+    etapa = "gravar na raiz depois de res/ falhar";
+    var problemaAlt = vecTentarEscrever(alternativo, texto);
+    if (problemaAlt) {
+      throw new Error("res/: " + problema + " · raiz: " + problemaAlt);
+    }
+
+    vecBridgeLog("aviso: res/ recusou a escrita — respondendo pela raiz daqui em diante");
+    vecBridgeLog("       (motivo: " + problema + ")");
+  } catch (e) {
+    throw new Error("[etapa: " + etapa + "] " + vec.describeError(e));
   }
-
-  vecBridgeLog("aviso: res/ recusou a escrita — respondendo pela raiz daqui em diante");
-  vecBridgeLog("       (motivo: " + problema + ")");
 }
 
 function vecReadCommand(file) {
@@ -302,6 +321,38 @@ function vecBridgeHeartbeat(dirs) {
 }
 
 /**
+ * Resposta de erro escrita com o mínimo possível de código.
+ *
+ * Serve a dois propósitos ao mesmo tempo. Para quem usa: o servidor recebe um erro
+ * em vez de esperar 30s e concluir "a ponte não respondeu", que manda investigar a
+ * instalação do painel quando o painel está perfeito.
+ *
+ * Para quem depura: isto usa só `new File`, `open`, `write`, `close` na raiz da pasta
+ * — nenhuma das partes que `vecWriteResult` usa a mais. Se esta linha aparecer no log
+ * como bem-sucedida, gravar arquivo funciona e o problema está no caminho mais longo.
+ * Se falhar também, gravar arquivo é que não funciona a partir do polling. Uma
+ * pergunta que vinha custando uma rodada inteira de teste, respondida de graça.
+ */
+function vecRespostaDeEmergencia(dirs, id, motivo) {
+  try {
+    var f = new File(dirs.base.fsName + "/res-" + id + ".json");
+    f.encoding = "UTF-8";
+    if (!f.open("w")) {
+      vecBridgeLog("       emergência: open('w') devolveu false");
+      return;
+    }
+    f.write(
+      '{"id":' + vec.quote(String(id)) + ',"ok":false,"error":' +
+      vec.quote("o painel executou o comando mas falhou ao gravar a resposta: " + motivo) + "}"
+    );
+    f.close();
+    vecBridgeLog("       emergência: resposta de erro gravada na raiz — escrever arquivo funciona");
+  } catch (e) {
+    vecBridgeLog("       emergência falhou também: " + vec.describeError(e));
+  }
+}
+
+/**
  * Um ciclo de polling. Chamado por `app.scheduleTask` — precisa ser global.
  */
 function vecBridgePoll() {
@@ -340,15 +391,18 @@ function vecBridgePoll() {
         error: resposta.error,
       });
     } catch (e) {
-      // Sem uma pista do que estava sendo serializado, um erro aqui é
-      // indiagnosticável — foi exatamente o que aconteceu na primeira rodada.
-      var pista;
+      // `vec.describeError` acrescenta arquivo:linha quando o erro traz. Com o painel
+      // empacotado num arquivo só, a linha aponta direto para a instrução culpada —
+      // que é a diferença entre corrigir e continuar chutando. `e.toString()`
+      // sozinho, que era o que estava aqui, esconde justamente isso.
+      vecBridgeLog("falhei ao responder: " + vec.describeError(e));
+
       try {
-        pista = " · ao serializar: " + String(vec.json(resposta)).substring(0, 200);
-      } catch (e2) {
-        pista = " · a própria serialização falhou: " + e2.toString();
-      }
-      vecBridgeLog("falhei ao responder: " + e.toString() + pista);
+        vecBridgeLog("       pilha: " + String($.stack).replace(/\n/g, " ‹ ").substring(0, 300));
+      } catch (eStack) {}
+
+      vecRespostaDeEmergencia(dirs, comando.id, vec.describeError(e));
+      vecBridge.errors++;
       continue;
     }
 
