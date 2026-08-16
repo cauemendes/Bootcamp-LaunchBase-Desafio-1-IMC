@@ -252,6 +252,31 @@ Consequência de projeto: o padrão `.tmp` + `rename` para escrita atômica **n�
 confiável em subpasta**. Quem lê precisa tratar JSON incompleto como "ainda não
 chegou" e tentar de novo, em vez de estourar.
 
+## `saveFrameToPng` pode existir e não fazer nada (26.3, macOS)
+
+O método está presente, a chamada retorna sem lançar erro, e **nenhum arquivo é
+gravado**. Testado com destino em pasta diferente: mesmo resultado. Não é permissão —
+a mesma pasta aceita escrita por `File.write` na mesma sessão.
+
+Ou seja: `typeof comp.saveFrameToPng === "function"` não garante nada. A única
+verificação que vale é conferir `destino.exists` **depois** da chamada.
+
+O caminho que funciona é a fila de render com um template de output, mais lento porém
+confiável. `vec.tools.save_frame` ainda não faz esse fallback — é o primeiro item
+pendente.
+
+## O design de origem raramente é geometricamente regular
+
+Medindo o contorno de um card de UI num print da Amazon, os cantos superiores tinham
+raios diferentes: ~172px à direita contra ~114px à esquerda. O contorno tinha sido
+desenhado à mão, não era um retângulo arredondado uniforme.
+
+Isso importa na hora de escolher a primitiva: forçar `rect` com um `roundness` só
+aproxima os quatro cantos pela média e o resultado fica visivelmente diferente do
+original justamente na silhueta, que é o que o olho compara primeiro. Quando a
+medição acusar assimetria, `path` é a escolha certa — é o caso em que abrir mão da
+primitiva animável vale a pena.
+
 ## Performance
 
 - `app.beginSuppressDialogs(true)` evita que um diálogo trave um script em lote.
