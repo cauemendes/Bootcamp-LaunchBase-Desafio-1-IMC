@@ -1639,6 +1639,8 @@ var vecBridge = {
   ui: null,
   log: [],
   lastHeartbeat: 0,
+  // null = ainda não sei se dá pra escrever dentro de res/. Ver vecWriteResult().
+  resSubpastaOk: null,
   POLL_MS: 350,
 };
 
@@ -1732,43 +1734,75 @@ function vecWriteVerified(file, text) {
 }
 
 /**
+ * `vecWriteVerified` com as duas formas de falha unificadas.
+ *
+ * A gravação em `res/` no AE 2026 não devolve `false` — ela *lança*
+ * "Object of type Function found where a Number, Array, or Property is needed",
+ * que não tem relação nenhuma com o que se estava fazendo. Tratar só o retorno
+ * deixaria a exceção passar por cima do plano B, que é justamente o que existe para
+ * cobrir esse caso.
+ */
+function vecTentarEscrever(file, texto) {
+  try {
+    return vecWriteVerified(file, texto);
+  } catch (e) {
+    return vec.describeError(e);
+  }
+}
+
+/**
  * Escreve a resposta onde o servidor consiga achar.
  *
- * O caminho normal é `res/<id>.json`. O alternativo é `<id>.json` na raiz da pasta
- * da ponte, e existe por observação, não por elegância: no AE 2026 do macOS a
- * gravação dentro de `res/` falhou em silêncio — arquivos de zero byte, `rename()`
- * devolvendo false — enquanto a mesma operação na raiz funcionou (é onde o heartbeat
- * mora, e o heartbeat nunca falhou). Ler e apagar dentro de `cmd/` funciona; só a
- * escrita em subpasta é que quebra.
+ * O caminho normal é `res/<id>.json`. O alternativo é `res-<id>.json` na raiz da
+ * pasta da ponte, e existe por observação, não por elegância: no AE 2026 do macOS a
+ * gravação dentro de `res/` falha — ora com arquivo de zero byte e `rename()`
+ * devolvendo false, ora com uma exceção sem nexo — enquanto a mesma operação na raiz
+ * funciona. É onde o heartbeat mora, e o heartbeat nunca falhou. Ler e apagar dentro
+ * de `cmd/` também funciona; só a escrita em subpasta é que quebra.
  *
- * Não sei o motivo, e chutar um motivo errado custaria mais uma rodada de teste. O
- * que dá pra fazer é tentar, conferir, e cair pra um caminho comprovado quando o
- * primeiro não entregar. O log diz qual dos dois valeu — é isso que vai permitir
- * simplificar isto depois, com evidência em vez de teoria.
+ * Não sei o motivo, e chutar um motivo errado custaria mais uma rodada de teste no
+ * After Effects. O que dá pra fazer é tentar, conferir o que ficou no disco, e cair
+ * para um caminho comprovado quando o primeiro não entregar.
+ *
+ * `resSubpastaOk` guarda o resultado da primeira tentativa. Sem isso, toda resposta
+ * pagaria uma exceção antes de acertar o caminho, e o log encheria de aviso repetido.
  *
  * Sem o par `.tmp`+rename a leitura poderia pegar um JSON pela metade; quem cobre
- * esse risco agora é o lado Node, que trata JSON incompleto como "ainda não chegou"
- * e tenta de novo, em vez de estourar.
+ * esse risco é o lado Node, que trata JSON incompleto como "ainda não chegou" e
+ * tenta de novo, em vez de estourar.
  */
 function vecWriteResult(dirs, id, payload) {
   var texto = vec.json(payload);
+  var alternativo = new File(dirs.base.fsName + "/res-" + id + ".json");
+
+  if (vecBridge.resSubpastaOk === false) {
+    var soAlternativo = vecTentarEscrever(alternativo, texto);
+    if (soAlternativo) throw new Error(soAlternativo);
+    return;
+  }
 
   var principal = new File(dirs.res.fsName + "/" + id + ".json");
-  var problema = vecWriteVerified(principal, texto);
-  if (!problema) return;
+  var problema = vecTentarEscrever(principal, texto);
 
+  if (!problema) {
+    vecBridge.resSubpastaOk = true;
+    return;
+  }
+
+  vecBridge.resSubpastaOk = false;
+
+  // Um arquivo pela metade em res/ seria lido pelo servidor como resposta válida.
   try {
-    principal.remove();
+    if (principal.exists) principal.remove();
   } catch (e) {}
 
-  var alternativo = new File(dirs.base.fsName + "/res-" + id + ".json");
-  var problemaAlt = vecWriteVerified(alternativo, texto);
-
+  var problemaAlt = vecTentarEscrever(alternativo, texto);
   if (problemaAlt) {
     throw new Error("res/: " + problema + " · raiz: " + problemaAlt);
   }
 
-  vecBridgeLog("aviso: res/ não aceitou a escrita (" + problema + ") — respondi pela raiz");
+  vecBridgeLog("aviso: res/ recusou a escrita — respondendo pela raiz daqui em diante");
+  vecBridgeLog("       (motivo: " + problema + ")");
 }
 
 function vecReadCommand(file) {
