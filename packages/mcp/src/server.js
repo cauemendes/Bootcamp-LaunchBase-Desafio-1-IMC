@@ -20,15 +20,32 @@ import fs from "node:fs";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { normalizeScene, validateScene } from "@vectorize-ae/core";
+import { applyBrand, brandSummary, normalizeScene, validateScene } from "@vectorize-ae/core";
 import { Bridge, BridgeError } from "./bridge.js";
+import { BrandStore } from "./brand-store.js";
 import { SCENE_FORMAT_GUIDE } from "./scene-guide.js";
+
+/**
+ * O que responder quando não há marca configurada.
+ *
+ * Isto é uma instrução, não um erro. Reconstruir um design com a cor errada custa
+ * mais que perguntar: quem for ajustar depois vai achar dezoito hexadecimais quase
+ * iguais espalhados por vinte camadas, e é exatamente esse trabalho manual que a
+ * ferramenta existe para eliminar. Uma pergunta de dez segundos no início evita isso.
+ */
+const SEM_MARCA =
+  "Nenhuma marca configurada.\n\n" +
+  "Antes de construir, PERGUNTE ao usuário se existe um guia de marca para este " +
+  "projeto — cores (hex) e famílias de fonte. Se houver, registre com `set_brand` e " +
+  "só então construa; as cores e fontes saem certas de primeira.\n\n" +
+  "Se ele disser que não há, ou preferir não informar agora, siga assim mesmo: as " +
+  "cores vêm da imagem e o texto sai em Arial. Não invente uma paleta de marca.";
 
 const BRIDGE_HINT =
   "Abra o After Effects e o painel em Window → Vectorize AE Bridge. " +
   "O painel precisa mostrar “ouvindo”.";
 
-export function createServer({ bridge = new Bridge() } = {}) {
+export function createServer({ bridge = new Bridge(), brands = new BrandStore() } = {}) {
   const server = new McpServer({ name: "vectorize-ae", version: "0.1.0" });
 
   /** Executa uma ferramenta da ponte e formata a resposta pro MCP. */
@@ -190,6 +207,103 @@ export function createServer({ bridge = new Bridge() } = {}) {
     }
   );
 
+  // ---------------------------------------------------------------- marca
+
+  server.registerTool(
+    "describe_brand",
+    {
+      title: "Marca ativa",
+      description:
+        "Cores e fontes da marca em uso. CHAME ANTES de build_scene, sempre. Se não " +
+        "houver marca configurada, pergunte ao usuário se existe um guia de marca para " +
+        "o projeto antes de construir — cor e fonte erradas viram retrabalho manual em " +
+        "todas as camadas.",
+      inputSchema: {},
+    },
+    async () => {
+      const ativa = brands.active();
+      const salvas = brands.list();
+
+      if (!ativa) {
+        return asText(
+          SEM_MARCA +
+            (salvas.length
+              ? `\n\nPerfis já salvos: ${salvas.map((b) => `${b.name} (${b.slug})`).join(", ")}. ` +
+                "Use `set_brand` com `activateSlug` para reativar um deles."
+              : "")
+        );
+      }
+
+      return asText(
+        `${brandSummary(ativa.brand)}\n\nPerfil ativo: ${ativa.slug}` +
+          (salvas.length > 1
+            ? `\nOutros perfis: ${salvas.filter((b) => b.slug !== ativa.slug).map((b) => b.slug).join(", ")}`
+            : "")
+      );
+    }
+  );
+
+  server.registerTool(
+    "set_brand",
+    {
+      title: "Registrar a marca do projeto",
+      description:
+        "Guarda as cores e fontes do cliente e passa a usá-las nas construções. Depois " +
+        "disso o SceneSpec pode usar os nomes (`\"color\": \"primary\"`, " +
+        "`\"fontFamily\": \"heading\"`) em vez de hexadecimal, e um hex medido da imagem " +
+        "que esteja perto de uma cor da marca é encostado nela automaticamente.\n\n" +
+        "Colete do usuário antes de chamar: os hexadecimais com seus nomes e as famílias " +
+        "de fonte com o estilo. Para trocar de cliente sem redigitar, passe só " +
+        "`activateSlug`.",
+      inputSchema: {
+        name: z.string().optional().describe("Nome do cliente ou do projeto."),
+        colors: z
+          .record(z.string())
+          .optional()
+          .describe('Cores por nome, ex.: {"primary": "#FF5A20", "ink": "#12263A"}.'),
+        fonts: z
+          .record(z.object({ family: z.string(), style: z.string().optional() }))
+          .optional()
+          .describe('Fontes por nome, ex.: {"heading": {"family": "ABC Diatype", "style": "Bold"}}.'),
+        fallbackFont: z
+          .string()
+          .optional()
+          .describe("Fonte para texto sem família definida. Padrão Arial."),
+        snapTolerance: z
+          .number()
+          .optional()
+          .describe(
+            "Distância máxima para encostar um hex medido numa cor da marca. Padrão 14 — " +
+              "cobre ruído de compressão sem trocar cores que são realmente outras."
+          ),
+        activateSlug: z
+          .string()
+          .optional()
+          .describe("Reativa um perfil já salvo, pelo slug. Ignora os demais campos."),
+      },
+    },
+    async ({ activateSlug, ...brand }) => {
+      if (activateSlug) {
+        const ativa = brands.activate(activateSlug);
+        if (!ativa) return asError(`Não achei nenhum perfil salvo com o slug "${activateSlug}".`);
+        return asText(`Perfil "${activateSlug}" ativado.\n\n${brandSummary(ativa.brand)}`);
+      }
+
+      const resultado = brands.save(brand);
+      if (!resultado.ok) {
+        return asError("O perfil de marca tem erros:\n\n" + resultado.errors.map((e) => `  • ${e}`).join("\n"));
+      }
+
+      return asText({
+        ok: true,
+        slug: resultado.slug,
+        arquivo: resultado.file,
+        avisos: resultado.warnings.length ? resultado.warnings : undefined,
+        resumo: brandSummary(brand),
+      });
+    }
+  );
+
   // ---------------------------------------------------------------- construção
 
   server.registerTool(
@@ -211,7 +325,8 @@ export function createServer({ bridge = new Bridge() } = {}) {
       description:
         "Constrói uma cena como shape layers e camadas de texto editáveis no After Effects. " +
         "Recebe um SceneSpec em JSON — chame describe_scene_format primeiro para saber o " +
-        "formato. Use isto para reconstruir uma imagem de design 2D como camadas nativas.",
+        "formato, e describe_brand para saber quais cores e fontes usar. Use isto para " +
+        "reconstruir uma imagem de design 2D como camadas nativas.",
       inputSchema: {
         sceneJson: z
           .string()
@@ -232,14 +347,32 @@ export function createServer({ bridge = new Bridge() } = {}) {
           .boolean()
           .optional()
           .describe("Centralizar a âncora de cada camada. Padrão true — necessário para animar."),
+        useBrand: z
+          .boolean()
+          .optional()
+          .describe(
+            "Aplicar a marca ativa. Padrão true. Passe false só quando o design " +
+              "deliberadamente não segue a identidade do cliente."
+          ),
       },
     },
-    async ({ sceneJson, compName, layerMode, reuseComp, recenterAnchors }) => {
+    async ({ sceneJson, compName, layerMode, reuseComp, recenterAnchors, useBrand = true }) => {
       let scene;
       try {
         scene = JSON.parse(sceneJson);
       } catch (err) {
         return asError(`sceneJson não é JSON válido: ${err.message}`);
+      }
+
+      // A marca entra antes da validação: um token como "primary" não é hex válido,
+      // e o validador reprovaria algo que está certo — só ainda não foi resolvido.
+      const marca = useBrand ? brands.active() : null;
+      const avisosMarca = [];
+
+      if (marca) {
+        const resolvida = applyBrand(scene, marca.brand);
+        scene = resolvida.scene;
+        avisosMarca.push(...resolvida.warnings);
       }
 
       // Validar antes de mandar pro AE: um erro apanhado aqui vira uma mensagem
@@ -267,12 +400,13 @@ export function createServer({ bridge = new Bridge() } = {}) {
 
       if (!result.ok) return asError(result.error);
 
-      const avisos = [...validation.warnings, ...(result.warnings ?? [])];
+      const avisos = [...avisosMarca, ...validation.warnings, ...(result.warnings ?? [])];
 
       return asText({
         ok: true,
         comp: result.compName,
         camadas: result.layerCount,
+        marca: marca ? marca.slug : "nenhuma — cores da imagem, texto em Arial",
         avisos: avisos.length ? avisos : undefined,
         proximoPasso:
           "Chame save_frame para ver o resultado antes de considerar a tarefa concluída.",

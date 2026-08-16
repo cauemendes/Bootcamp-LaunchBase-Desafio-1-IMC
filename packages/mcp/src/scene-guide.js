@@ -78,6 +78,23 @@ continuar editável para ajuste e tradução.
 **Cores repetidas usam exatamente o mesmo hex.** Amostre do meio das áreas chapadas,
 longe das bordas, que estão suavizadas e devolvem cor errada.
 
+**Marca antes de cor medida.** Chame \`describe_brand\` antes de construir. Havendo
+marca configurada, escreva o nome no lugar do hexadecimal:
+
+\`\`\`json
+"fill": { "color": "primary" },
+"shape": { "type": "text", "fontFamily": "heading", "…": "…" }
+\`\`\`
+
+Vale por dois motivos: o hex que você mede num print é o que a compressão deixou, não
+o que a marca especifica; e um SceneSpec com nomes sobrevive à troca de cliente. Se
+você escrever o hex medido mesmo assim, uma cor próxima de uma cor da marca é
+encostada nela automaticamente, com aviso.
+
+Sem marca configurada, **pergunte ao usuário** se existe um guia de marca para o
+projeto antes de construir. Se não houver, use os hex medidos — mas não invente uma
+paleta.
+
 **Fontes:** chame \`list_fonts\` com filtro para conferir se a família existe nesta
 máquina antes de pedir por ela. Fonte ausente é substituída em silêncio e o layout
 muda. Sem certeza, deixe \`fontFamily\` vazio e ajuste depois.

@@ -25,6 +25,14 @@ export {
 
 export { readImageInfo, toBase64, SUPPORTED_MEDIA_TYPES } from "./image-info.js";
 
+export {
+  DEFAULT_FALLBACK_FONT,
+  DEFAULT_SNAP_TOLERANCE,
+  applyBrand,
+  brandSummary,
+  validateBrand,
+} from "./brand.js";
+
 export { SCENE_SCHEMA, SHAPE_SCHEMA } from "./ai/schema.js";
 export { SYSTEM_PROMPT, buildUserPrompt } from "./ai/prompt.js";
 export { createClient, analyzeImage, AnalysisError, DEFAULT_MODEL } from "./ai/client.js";

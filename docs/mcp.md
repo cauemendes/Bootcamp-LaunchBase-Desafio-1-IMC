@@ -99,11 +99,38 @@ e a lista de comps, está tudo ligado.
 | `describe_layer` | Detalha uma camada: transform, keyframes, efeitos, shapes, texto |
 | `list_fonts` | Fontes instaladas nesta máquina |
 | `save_frame` | Renderiza um frame **e devolve a imagem**, para o Claude ver o resultado |
+| `describe_brand` | Cores e fontes da marca em uso |
+| `set_brand` | Registra a identidade do cliente, ou troca de perfil |
 | `describe_scene_format` | Explica o formato do SceneSpec |
 | `build_scene` | Constrói camadas vetoriais a partir de um SceneSpec |
 | `execute_script` | ExtendScript arbitrário — o escape hatch |
 
-São nove, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+### A marca entra antes, não depois
+
+Um modelo olhando um print devolve `#FF5A1F` porque foi isso que ele mediu nos pixels.
+A cor da marca é `#FF5A20`. A diferença é invisível na tela e cara no arquivo: quem
+for trocar a cor depois encontra dezoito hexadecimais quase iguais espalhados por
+vinte camadas — exatamente o trabalho manual que a ferramenta existe para eliminar.
+
+Por isso o Claude **pergunta** se existe guia de marca antes da primeira construção.
+Informando, o SceneSpec passa a usar nomes:
+
+```json
+"fill": { "color": "primary" },
+"shape": { "type": "text", "fontFamily": "heading" }
+```
+
+E um hex medido que esteja perto de uma cor da marca é encostado nela, com aviso. O
+limite é conservador: pega ruído de compressão, não troca cores que são realmente
+outras.
+
+Um perfil por cliente, guardados em `~/Library/Application Support/vectorize-ae/brands/`.
+Trocar de cliente é `set_brand` com `activateSlug`. Sem marca configurada nada quebra:
+as cores vêm da imagem e o texto sai em Arial.
+
+### Sobre o tamanho do conjunto
+
+São onze, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
