@@ -162,7 +162,25 @@ function vecTentarEscrever(file, texto) {
   try {
     return vecWriteVerified(file, texto);
   } catch (e) {
-    return vec.describeError(e);
+    return vec.describeError(e) + " (em " + file.fsName + ")";
+  }
+}
+
+/**
+ * O JSON da resposta, ou uma resposta de erro montada à mão.
+ *
+ * Uma resposta de erro vale muito mais que um timeout. Sem isto, uma falha de
+ * serialização deixa o servidor esperando 30s e concluindo "a ponte não respondeu" —
+ * o que manda investigar a instalação do painel, que está perfeita. O texto é
+ * concatenado à mão de propósito: depender de `vec.json` para relatar que `vec.json`
+ * falhou não faria sentido.
+ */
+function vecTextoResposta(payload) {
+  try {
+    return vec.json(payload);
+  } catch (e) {
+    return '{"id":' + vec.quote(String(payload.id)) + ',"ok":false,"error":' +
+      vec.quote("falhei ao serializar a resposta: " + vec.describeError(e)) + "}";
   }
 }
 
@@ -188,7 +206,7 @@ function vecTentarEscrever(file, texto) {
  * tenta de novo, em vez de estourar.
  */
 function vecWriteResult(dirs, id, payload) {
-  var texto = vec.json(payload);
+  var texto = vecTextoResposta(payload);
   var alternativo = new File(dirs.base.fsName + "/res-" + id + ".json");
 
   if (vecBridge.resSubpastaOk === false) {
