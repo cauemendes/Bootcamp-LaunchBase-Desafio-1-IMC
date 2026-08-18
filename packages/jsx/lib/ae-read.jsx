@@ -27,7 +27,7 @@ vec.describeProject = function () {
   if (!proj) return { open: false };
 
   var comps = [];
-  var footage = 0;
+  var footage = [];
   var folders = 0;
 
   for (var i = 1; i <= proj.numItems; i++) {
@@ -46,7 +46,27 @@ vec.describeProject = function () {
     } else if (item instanceof FolderItem) {
       folders++;
     } else {
-      footage++;
+      // O caminho em disco é o que torna a imagem utilizável: medir e enxergar
+      // acontecem fora do After Effects, lendo o arquivo. Sem isto, uma referência
+      // importada no projeto é invisível para quem for reconstruí-la — sobrava
+      // pedir o caminho ao usuário ou vasculhar o disco no chute.
+      var entrada = {
+        name: item.name,
+        id: item.id,
+        width: item.width,
+        height: item.height,
+        file: null,
+      };
+
+      try {
+        if (item.mainSource && item.mainSource.file) {
+          entrada.file = item.mainSource.file.fsName;
+        }
+      } catch (e) {
+        // Sólido, nulo e placeholder não têm arquivo — `file: null` já diz isso.
+      }
+
+      footage.push(entrada);
     }
   }
 
@@ -57,7 +77,8 @@ vec.describeProject = function () {
     file: proj.file ? proj.file.name : null,
     saved: !!proj.file,
     comps: comps,
-    footageCount: footage,
+    footageCount: footage.length,
+    footage: footage,
     folderCount: folders,
     activeComp: active instanceof CompItem ? active.name : null,
     // Sem projeto salvo, qualquer caminho relativo que o modelo sugerir é chute.
@@ -131,6 +152,18 @@ vec.summarizeLayer = function (layer) {
 
   if (layer instanceof AVLayer && layer.source && !(layer instanceof ShapeLayer)) {
     resumo.source = layer.source.name;
+
+    // O caminho em disco acompanha o nome porque é ele que serve para alguma coisa:
+    // medir a imagem e enxergá-la acontece fora do After Effects, lendo o arquivo.
+    // Dizer "a camada chama 11-1.png" sem dizer onde ela está deixa quem for
+    // reconstruir procurando no disco.
+    try {
+      if (layer.source.mainSource && layer.source.mainSource.file) {
+        resumo.sourceFile = layer.source.mainSource.file.fsName;
+      }
+    } catch (e) {
+      // Sólido e comp aninhada não têm arquivo.
+    }
   }
 
   var efeitos = layer.property("ADBE Effect Parade");

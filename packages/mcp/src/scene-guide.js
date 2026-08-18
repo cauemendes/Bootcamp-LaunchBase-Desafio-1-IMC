@@ -119,6 +119,11 @@ novo à mão é o trabalho que se queria evitar.
 exatos e o raio de cada canto. Estimar no olho um elemento pequeno erra
 proporcionalmente mais que estimar um grande.
 
+A imagem de referência é lida do disco, não do After Effects. \`describe_project\`
+devolve o caminho de cada arquivo importado — basta a imagem estar no projeto, não
+precisa estar dentro de uma composição. Se ela nem foi importada, peça o caminho ao
+usuário.
+
 Quando o elemento estiver por cima de outra coisa — um cursor sobre uma interface —
 amostre a cor dele longe da borda: os pixels da divisa são mistura das duas camadas e
 não são cor de nenhuma das duas.

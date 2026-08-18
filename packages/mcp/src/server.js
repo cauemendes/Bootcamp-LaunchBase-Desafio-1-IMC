@@ -108,8 +108,10 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
     {
       title: "Descrever o projeto",
       description:
-        "Lista as composições do projeto aberto, com dimensões, frame rate e número de " +
-        "camadas. Comece por aqui quando não souber o que existe no projeto.",
+        "Lista as composições do projeto aberto e os arquivos importados, com o caminho " +
+        "de cada um em disco. Comece por aqui quando não souber o que existe no projeto — " +
+        "é também como se acha o caminho de uma imagem de referência para `measure_image`, " +
+        "que lê o arquivo direto e não depende do After Effects.",
       inputSchema: {},
     },
     async () => asText((await call("describe_project", {})).result)
