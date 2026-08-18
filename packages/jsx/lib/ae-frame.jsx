@@ -64,20 +64,73 @@ function vecPngTemplate(om) {
  * número é o do frame na comp, não zero. Procurar pelo prefixo é o que funciona sem
  * depender do formato de numeração desta versão.
  */
-function vecAcharSaida(pasta, prefixo) {
-  var arquivos = pasta.getFiles(function (f) {
-    return f instanceof File && decodeURI(f.name).indexOf(prefixo) === 0;
-  });
+/**
+ * `Folder.name` vem com URI-encoding, e decodificar é o que permite comparar. Mas
+ * `decodeURI` **lança exceção** num `%` solto — um arquivo chamado `100%.png` na
+ * mesma pasta derrubava a busca inteira, não só aquela entrada. Um filtro que estoura
+ * dentro de `getFiles` devolve lista vazia, e o sintoma vira "a fila rodou mas não
+ * achei o arquivo": aponta para o render, quando o problema é a leitura da pasta.
+ */
+function vecNomeLegivel(f) {
+  try {
+    return decodeURI(f.name);
+  } catch (e) {
+    return String(f.name);
+  }
+}
 
-  if (!arquivos || arquivos.length === 0) return null;
+/**
+ * Acha o arquivo que a fila gravou.
+ *
+ * Sem callback no `getFiles`: listar tudo e filtrar aqui deixa a falha de uma entrada
+ * isolada, em vez de contaminar o resultado inteiro.
+ *
+ * `desde` é a segunda tentativa. Se o nome não casar — porque o template numerou de
+ * um jeito que não previmos, ou trocou a extensão — o arquivo mais novo que a pasta
+ * ganhou depois do início do render ainda é a resposta certa. Vale mais que devolver
+ * "não achei" quando o render funcionou.
+ */
+function vecAcharSaida(pasta, prefixo, desde) {
+  var todos = pasta.getFiles();
+  if (!todos) return null;
+
+  var porPrefixo = [];
+  var recentes = [];
+  var i;
+
+  for (i = 0; i < todos.length; i++) {
+    var f = todos[i];
+    if (!(f instanceof File)) continue;
+
+    if (vecNomeLegivel(f).indexOf(prefixo) === 0) {
+      porPrefixo.push(f);
+    } else if (desde && f.modified && f.modified.getTime() >= desde) {
+      recentes.push(f);
+    }
+  }
+
+  var candidatos = porPrefixo.length ? porPrefixo : recentes;
+  if (candidatos.length === 0) return null;
 
   // Mais de um só acontece se sobrou lixo de uma tentativa anterior; o mais novo é o
   // desta rodada.
-  var escolhido = arquivos[0];
-  for (var i = 1; i < arquivos.length; i++) {
-    if (arquivos[i].modified > escolhido.modified) escolhido = arquivos[i];
+  var escolhido = candidatos[0];
+  for (i = 1; i < candidatos.length; i++) {
+    if (candidatos[i].modified > escolhido.modified) escolhido = candidatos[i];
   }
   return escolhido;
+}
+
+/** O que a pasta tem, para a mensagem de erro não ser um beco sem saída. */
+function vecListarPasta(pasta, limite) {
+  var todos = pasta.getFiles();
+  if (!todos || todos.length === 0) return "(vazia)";
+
+  var nomes = [];
+  for (var i = 0; i < todos.length && i < limite; i++) nomes.push(vecNomeLegivel(todos[i]));
+  if (todos.length > limite) nomes.push("… e mais " + (todos.length - limite));
+
+  return nomes.join(", ");
 }
 
 /** Renderiza um frame pela fila. Devolve o File gravado, ou lança erro explicando. */
@@ -102,6 +155,9 @@ function vecSaveFrameViaQueue(comp, time, destino) {
 
   // Prefixo próprio para achar a saída depois sem confundir com outro arquivo.
   var prefixo = "vecframe" + new Date().getTime();
+  // Um segundo de folga: `File.modified` tem resolução de segundo, e um arquivo
+  // gravado no mesmo segundo do início ficaria de fora da comparação.
+  var comecou = new Date().getTime() - 1000;
   var item = null;
 
   try {
@@ -127,9 +183,12 @@ function vecSaveFrameViaQueue(comp, time, destino) {
       throw new Error("A fila de render parou com erro ao gravar o frame.");
     }
 
-    var gravado = vecAcharSaida(pasta, prefixo);
+    var gravado = vecAcharSaida(pasta, prefixo, comecou);
     if (gravado === null) {
-      throw new Error("A fila rodou mas não encontrei o arquivo gerado em " + pasta.fsName + ".");
+      throw new Error(
+        "A fila rodou mas não encontrei o arquivo gerado em " + pasta.fsName +
+          ". Template usado: " + template + ". A pasta tem: " + vecListarPasta(pasta, 12)
+      );
     }
 
     // O nome vem numerado pela sequência; quem chamou pediu um caminho específico.

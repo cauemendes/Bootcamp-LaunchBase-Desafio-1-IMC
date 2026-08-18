@@ -227,6 +227,21 @@ tenha espaço e acento. `Folder.name` também vem codificado: `"Adobe%20After%20
 Compare sempre com `decodeURI(f.name)`, senão o filtro nunca casa — e `getFiles()`
 devolve lista vazia sem erro nenhum.
 
+**Mas `decodeURI` lança exceção num `%` solto.** `decodeURI("100%.png")` estoura, e um
+arquivo assim na pasta derruba a varredura inteira — não só aquela entrada. Pior
+quando o decode está dentro do callback de `getFiles`: a exceção volta como lista
+vazia, e o sintoma aponta para o lugar errado ("não achei o arquivo" em vez de "não
+consegui ler a pasta"). Envolva em `try/catch` e caia para o nome cru:
+
+```javascript
+function nomeLegivel(f) {
+  try { return decodeURI(f.name); } catch (e) { return String(f.name); }
+}
+```
+
+Corolário: prefira `getFiles()` sem callback e filtre depois. Assim a falha de uma
+entrada fica isolada, em vez de contaminar o resultado.
+
 ### As funções de arquivo devolvem `false`, não lançam erro
 
 `open()`, `write()`, `rename()` e `remove()` sinalizam falha pelo retorno. Ignorar o
