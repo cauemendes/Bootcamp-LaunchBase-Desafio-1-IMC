@@ -49,8 +49,11 @@ import { sceneFormatGuide } from "./scene-guide.js";
 const SEM_MARCA =
   "Nenhuma marca configurada.\n\n" +
   "Antes de construir, PERGUNTE ao usuário se existe um guia de marca para este " +
-  "projeto — cores (hex) e famílias de fonte. Se houver, registre com `set_brand` e " +
-  "só então construa; as cores e fontes saem certas de primeira.\n\n" +
+  "projeto — cores (hex), famílias de fonte, e arquivos de logo. Se houver, registre " +
+  "com `set_brand` e só então construa; as cores e fontes saem certas de primeira.\n\n" +
+  "O logo importa tanto quanto a cor: redesenhado a partir de print ele fica errado de " +
+  "um jeito que ninguém aceita, e existe versão oficial. Se o usuário tiver o arquivo, " +
+  "registre em `assets` e use `image` com `source`.\n\n" +
   "Se ele disser que não há, ou preferir não informar agora, siga assim mesmo: as " +
   "cores vêm da imagem e o texto sai em Arial. Não invente uma paleta de marca.";
 
@@ -388,6 +391,16 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .string()
           .optional()
           .describe("Fonte para texto sem família definida. Padrão Arial."),
+        assets: z
+          .record(z.string())
+          .optional()
+          .describe(
+            'Arquivos da marca por nome, ex.: {"logo": "/Users/eu/marca/logo.ai"}. ' +
+              "Logo NUNCA deve ser redesenhado a partir de print: existe versão oficial, " +
+              "e a aproximação é uso indevido de marca. Com o asset registrado, uma forma " +
+              '`image` com `"source": "logo"` coloca o arquivo real. Pergunte ao usuário ' +
+              "se há logos ou imagens fixas junto das cores e fontes."
+          ),
         notes: z
           .array(z.string())
           .optional()
@@ -544,15 +557,24 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
 
       const avisos = [...avisosMarca, ...validation.warnings, ...(result.warnings ?? [])];
 
+      // Salvar é decisão do usuário, não obrigação da ferramenta. Mas produzir em
+      // série sem nada em disco é o pior desfecho possível, então quando o projeto
+      // nunca foi salvo o aviso vem com um caminho pronto na Mesa.
+      const semArquivo = !result.projectFile;
+
       return asText({
         ok: true,
         comp: result.compName,
         camadas: result.layerCount,
         marca: marca ? marca.slug : "nenhuma — cores da imagem, texto em Arial",
         avisos: avisos.length ? avisos : undefined,
+        projeto: semArquivo
+          ? "NUNCA SALVO — nada disto está em disco. Ofereça salvar em " +
+            `${result.suggestedSavePath} (save_project com esse path). Não salve sem ` +
+            "o usuário concordar; só não deixe passar em branco."
+          : result.projectFile,
         proximoPasso:
-          "Chame save_frame para ver o resultado antes de considerar a tarefa concluída. " +
-          "As camadas existem só na memória do After Effects até save_project rodar.",
+          "Chame save_frame para ver o resultado antes de considerar a tarefa concluída.",
       });
     }
   );

@@ -22,6 +22,7 @@
 //@include "ae-read.jsx"
 //@include "ae-frame.jsx"
 //@include "ae-anim.jsx"
+//@include "ae-image.jsx"
 //@include "build-scene.jsx"
 
 /*global app, File, Folder, CompItem*/

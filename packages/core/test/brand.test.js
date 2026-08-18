@@ -294,3 +294,51 @@ test("hex medido num gradiente encosta na cor da marca", () => {
   assert.equal(scene.elements[0].stroke.to, "#2e7d32", "longe da paleta, ficou como estava");
   assert.equal(scene.elements[0].stroke.width, 2);
 });
+
+// ---------------------------------------------------------------- assets
+
+test("source com nome de asset resolve para o arquivo real", () => {
+  // Logo redesenhado de print é uso indevido de marca. Registrar o arquivo e referir
+  // por nome é o que faz a ferramenta usar o oficial.
+  const marca = { ...MARCA, assets: { logo: "/Users/eu/marca/logo.ai" } };
+
+  const { scene, applied } = applyBrand(
+    cena([{ shape: { type: "image", x: 0, y: 0, w: 100, h: 50, source: "logo" } }]),
+    marca
+  );
+
+  assert.equal(scene.elements[0].shape.source, "/Users/eu/marca/logo.ai");
+  assert.equal(applied.assets, 1);
+});
+
+test("asset inexistente cai para placeholder em vez de virar caminho quebrado", () => {
+  const { scene, warnings } = applyBrand(
+    cena([{ shape: { type: "image", x: 0, y: 0, w: 100, h: 50, source: "logo-secundario" } }]),
+    { ...MARCA, assets: { logo: "/a/logo.ai" } }
+  );
+
+  assert.equal(scene.elements[0].shape.source, null, "null vira placeholder marcado");
+  assert.match(warnings.join(" "), /não existe na marca/);
+  assert.match(warnings.join(" "), /placeholder/);
+});
+
+test("caminho absoluto em source passa direto, sem procurar na marca", () => {
+  const { scene, warnings } = applyBrand(
+    cena([{ shape: { type: "image", x: 0, y: 0, w: 10, h: 10, source: "/tmp/foto.png" } }]),
+    MARCA
+  );
+
+  assert.equal(scene.elements[0].shape.source, "/tmp/foto.png");
+  assert.deepEqual(warnings, []);
+});
+
+test("validateBrand recusa asset sem caminho", () => {
+  assert.equal(validateBrand({ ...MARCA, assets: { logo: "" } }).ok, false);
+  assert.equal(validateBrand({ ...MARCA, assets: { logo: "/a/b.ai" } }).ok, true);
+});
+
+test("brandSummary lista os assets disponíveis", () => {
+  const texto = brandSummary({ ...MARCA, assets: { logo: "/a/logo.ai", selo: "/a/selo.png" } });
+  assert.match(texto, /Assets/);
+  assert.match(texto, /logo, selo/);
+});

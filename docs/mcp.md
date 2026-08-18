@@ -174,6 +174,30 @@ E o stagger segue a **ordem da lista**, não o índice da camada na timeline. Es
 por índice dá resultado aleatório e parece erro; a ordem de leitura do design é uma
 decisão de quem monta o spec.
 
+### O que não é vetor entra marcado
+
+Uma fotografia redesenhada com shapes fica pior que um espaço reservado. Um logo
+redesenhado a partir de print fica errado de um jeito que ninguém aceita — existe versão
+oficial, e a aproximação é uso indevido de marca.
+
+A forma `image` cobre os dois casos. Com um arquivo (caminho, ou o nome de um asset da
+marca) ele é importado e enquadrado na caixa medida. Sem arquivo, entra um placeholder
+que **grita**: retângulo cinza no lugar certo, nome prefixado com `[IMAGEM]`, rótulo
+laranja na timeline, e um comentário na camada dizendo o que colocar ali. Três sinais,
+porque um só se perde numa comp de trinta camadas. Rótulo aqua marca imagem que foi
+colocada — confira o enquadramento.
+
+Por isso `set_brand` também guarda `assets`: registre o logo uma vez e o SceneSpec passa
+a referi-lo por nome. Vale perguntar por logos junto das cores e fontes, no começo.
+
+### Salvar é sua decisão — a ferramenta só não deixa passar em branco
+
+`save_project` existe mas não é automático: gravar o arquivo de alguém sem ele pedir é
+pior que não gravar. O que a ferramenta faz é avisar. Quando o projeto **nunca** foi
+salvo, `build_scene` devolve isso em destaque, junto de um caminho pronto na Mesa — o
+cenário que isso protege é produzir vinte telas numa noite e o After Effects fechar com
+nada em disco.
+
 ### Fidelidade é uma escolha, não um padrão escondido
 
 Medir cada forma dá o resultado mais fiel e foi o que fez uma reconstrução levar

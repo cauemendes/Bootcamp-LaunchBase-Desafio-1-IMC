@@ -13,6 +13,7 @@
  *   packages/jsx/lib/ae-read.jsx
  *   packages/jsx/lib/ae-frame.jsx
  *   packages/jsx/lib/ae-anim.jsx
+ *   packages/jsx/lib/ae-image.jsx
  *   packages/jsx/lib/build-scene.jsx
  *
  * Edite os originais em packages/jsx/ e rode a instalação de novo.
@@ -1896,6 +1897,171 @@ vec.applyAnimation = function (tracks, options) {
   };
 };
 
+// ── ae-image.jsx ──
+/**
+ * Camada de imagem: um arquivo colocado na caixa, ou um placeholder honesto.
+ *
+ * ── Por que isto existe ───────────────────────────────────────────────────────
+ * Nem tudo numa arte é vetor. Uma fotografia redesenhada com shapes fica pior que um
+ * espaço reservado — e um logo redesenhado a partir de print é pior ainda: existe
+ * versão oficial, e a aproximação é uso indevido de marca.
+ *
+ * Então há dois caminhos, e a diferença entre eles é ter o arquivo ou não:
+ *
+ *   com `source`  → importa e posiciona na caixa medida
+ *   sem `source`  → placeholder marcado, para o designer trocar pela imagem real
+ *
+ * ── O placeholder precisa gritar ──────────────────────────────────────────────
+ * Um retângulo cinza discreto passa batido e vai para o cliente. Este vem com nome
+ * prefixado, rótulo de cor laranja na timeline, e um comentário na camada dizendo o
+ * que colocar ali. Três sinais, porque um só se perde numa comp de trinta camadas.
+ */
+
+/*global app, File, ImportOptions, vec*/
+
+var vec = vec || {};
+
+/**
+ * Rótulos de cor da timeline usados pela ferramenta.
+ *
+ * Cor de rótulo é como um motion designer varre uma comp de longe. Reservar dois
+ * valores para "isto não é vetor" transforma uma verificação item por item num olhar.
+ */
+vec.LABEL = {
+  placeholder: 11, // laranja: falta trocar por imagem real
+  asset: 3, // aqua: arquivo colocado, confira o enquadramento
+};
+
+/** Escala que faz a imagem cobrir ou caber na caixa, preservando proporção. */
+function vecEscalaParaCaixa(larguraFonte, alturaFonte, caixaW, caixaH, fit) {
+  if (!larguraFonte || !alturaFonte) return [100, 100];
+
+  var porX = (caixaW / larguraFonte) * 100;
+  var porY = (caixaH / alturaFonte) * 100;
+
+  if (fit === "stretch") return [porX, porY];
+
+  // `cover` preenche a caixa e sobra fora; `contain` cabe inteira e sobra espaço.
+  var fator = fit === "contain" ? Math.min(porX, porY) : Math.max(porX, porY);
+  return [fator, fator];
+}
+
+/** Importa o arquivo, reaproveitando o item se ele já estiver no projeto. */
+function vecImportar(arquivo) {
+  var alvo = arquivo.fsName;
+
+  for (var i = 1; i <= app.project.numItems; i++) {
+    var item = app.project.item(i);
+    try {
+      if (item.mainSource && item.mainSource.file && item.mainSource.file.fsName === alvo) {
+        // Importar duas vezes cria dois itens apontando para o mesmo arquivo, e o
+        // painel de projeto fica com duplicatas que o designer teria que limpar.
+        return item;
+      }
+    } catch (e) {}
+  }
+
+  return app.project.importFile(new ImportOptions(arquivo));
+}
+
+/**
+ * Constrói a camada.
+ *
+ * @param {CompItem} comp
+ * @param {Object} spec  { name, x, y, width, height, source, fit, label, opacity }
+ * @returns {{layer: Layer, warning: String|null}}
+ */
+vec.addImageLayer = function (comp, spec, opts) {
+  var aviso = null;
+
+  if (spec.source) {
+    var arquivo = new File(spec.source);
+
+    if (!arquivo.exists) {
+      // Caminho errado não pode virar camada silenciosamente ausente: cai para
+      // placeholder e o aviso diz o caminho que faltou.
+      aviso = 'Arquivo não encontrado para "' + spec.name + '": ' + arquivo.fsName +
+        " — entrou como placeholder.";
+      return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
+    }
+
+    var item = vecImportar(arquivo);
+    var layer = comp.layers.add(item);
+
+    layer.name = vec.safeName(spec.name, "Imagem");
+    layer.label = vec.LABEL.asset;
+    layer.comment = "Colocado por Vectorize AE · confira o enquadramento";
+
+    var t = layer.property("ADBE Transform Group");
+    var escala = vecEscalaParaCaixa(
+      item.width,
+      item.height,
+      spec.width,
+      spec.height,
+      spec.fit
+    );
+
+    // Âncora no centro do conteúdo e posição no centro da caixa: é o único par que
+    // mantém a imagem centrada qualquer que seja a escala.
+    t.property("ADBE Anchor Point").setValue([item.width / 2, item.height / 2]);
+    t.property("ADBE Position").setValue([spec.x + spec.width / 2, spec.y + spec.height / 2]);
+    t.property("ADBE Scale").setValue(escala);
+    t.property("ADBE Opacity").setValue(spec.opacity);
+
+    return { layer: layer, warning: null };
+  }
+
+  aviso = 'PLACEHOLDER: "' + spec.name + '" precisa de uma imagem real' +
+    (spec.label ? " (" + spec.label + ")" : "") + ".";
+
+  return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
+};
+
+/**
+ * O retângulo que ocupa o lugar da imagem que falta.
+ *
+ * Shape layer e não solid: solid vira item no painel de projeto e polui a lista, e o
+ * designer costuma apagar o placeholder em vez de reaproveitá-lo — deixar lixo no
+ * projeto é pior que deixar uma camada.
+ */
+function vecPlaceholder(comp, spec, descricao) {
+  var layer = comp.layers.addShape();
+
+  layer.name = "[IMAGEM] " + vec.safeName(spec.name, "Imagem");
+  layer.label = vec.LABEL.placeholder;
+  layer.comment = descricao + " Troque esta camada pela imagem e apague o placeholder.";
+
+  var contents = layer.property("ADBE Root Vectors Group");
+  var group = contents.addProperty("ADBE Vector Group");
+  group.name = spec.label ? vec.safeName(spec.label, "Conteúdo") : "Área da imagem";
+
+  var inner = group.property("ADBE Vectors Group");
+
+  vec.addRect(inner, {
+    type: "rect",
+    cx: spec.x + spec.width / 2,
+    cy: spec.y + spec.height / 2,
+    w: spec.width,
+    h: spec.height,
+    roundness: 0,
+  });
+
+  // Cinza médio com contorno: lê como "espaço reservado" em qualquer fundo, claro ou
+  // escuro. Uma cor da marca aqui seria pior — pareceria parte do design.
+  vec.addFill(inner, { color: "#8a8a8a", opacity: 35 }, {});
+  vec.addStroke(
+    inner,
+    { color: "#8a8a8a", opacity: 100, width: 2, cap: "butt", join: "miter" },
+    {}
+  );
+
+  var t = layer.property("ADBE Transform Group");
+  t.property("ADBE Anchor Point").setValue([0, 0]);
+  t.property("ADBE Position").setValue([0, 0]);
+
+  return layer;
+}
+
 // ── build-scene.jsx ──
 /**
  * Ponto de entrada do adapter ExtendScript.
@@ -1918,7 +2084,7 @@ vec.applyAnimation = function (tracks, options) {
 // ── ae-text.jsx ──
 
 
-/*global app, vec, CompItem*/
+/*global app, Folder, vec, CompItem*/
 
 /**
  * @param {String} specPath  caminho do JSON escrito pelo painel
@@ -1987,7 +2153,10 @@ function vecBuildScene(scene, options) {
     for (var i = 0; i < scene.layers.length; i++) {
       var spec = scene.layers[i];
       try {
-        if (spec.type === "text") {
+        if (spec.type === "image") {
+          var img = vec.addImageLayer(comp, spec, buildOpts);
+          if (img.warning) warnings.push(img.warning);
+        } else if (spec.type === "text") {
           var result = vec.addTextLayer(comp, spec, buildOpts);
           if (result.fontWarning) warnings.push(result.fontWarning);
         } else {
@@ -2007,6 +2176,13 @@ function vecBuildScene(scene, options) {
     return {
       ok: true,
       compName: comp.name,
+      // Quem decide salvar é o usuário. O que a ferramenta deve fazer é não deixar
+      // isso passar em branco quando ele estiver produzindo em série: vinte telas numa
+      // noite, o AE fechando, e nada em disco é o pior desfecho possível.
+      projectFile: app.project && app.project.file ? app.project.file.fsName : null,
+      suggestedSavePath: app.project && app.project.file
+        ? null
+        : Folder.desktop.fsName + "/" + vec.safeName(compName, "cena") + ".aep",
       layerCount: comp.numLayers,
       warnings: warnings,
     };

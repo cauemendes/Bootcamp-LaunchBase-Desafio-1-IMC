@@ -222,6 +222,44 @@ Se exatidão automática importar mais que estrutura, o efeito Gradient Ramp
 como track matte, montado via \`execute_script\`. Custa duas camadas e um matte em vez
 de uma shape editável.
 
+## Foto, textura e logo: o que não é vetor
+
+Nem tudo numa arte pode ser redesenhado com formas. Uma fotografia reconstruída com
+shapes fica pior que um espaço reservado, e um logo redesenhado a partir de print fica
+errado de um jeito que ninguém aceita — existe versão oficial.
+
+Para esses casos existe a forma \`image\`:
+
+\`\`\`json
+{
+  "id": "foto-produto",
+  "name": "Foto / Produto",
+  "shape": {
+    "type": "image",
+    "x": 120, "y": 340, "w": 480, "h": 360,
+    "fit": "cover",
+    "source": "logo",
+    "label": "foto do produto em fundo claro"
+  }
+}
+\`\`\`
+
+**Com \`source\`** — caminho de arquivo, ou o nome de um asset da marca (veja
+\`describe_brand\`) — o arquivo é importado e posicionado na caixa. \`fit\` é
+\`cover\` (preenche e sobra fora, padrão), \`contain\` (cabe inteira) ou \`stretch\`.
+
+**Sem \`source\`** entra um placeholder marcado: retângulo cinza na caixa medida,
+nome prefixado com \`[IMAGEM]\`, **rótulo laranja** na timeline e um comentário na
+camada dizendo o que colocar. Três sinais, porque um só se perde numa comp de trinta
+camadas. Rótulo aqua marca imagem que **foi** colocada — confira o enquadramento.
+
+\`label\` é o que o designer lê para saber o que vai ali. Descreva o conteúdo, não o
+elemento: "foto do produto em fundo claro" diz o que colocar; "Imagem 3" não diz nada.
+
+**Quando usar placeholder em vez de tentar:** fotografia, textura, degradê complexo com
+imagem, ilustração pintada, e logo sem arquivo oficial. Marcar honestamente o que não
+foi reproduzido vale mais que uma aproximação que passa por pronta.
+
 ## Não suportado
 
 Sombra, blur e textura não têm representação no formato — aplique como efeito depois,

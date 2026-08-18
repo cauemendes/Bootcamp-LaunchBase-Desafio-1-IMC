@@ -13,7 +13,10 @@ import { parsePathData } from "./svg-path.js";
 
 export const SCENE_SPEC_VERSION = "1.0";
 
-const SHAPE_TYPES = new Set(["rect", "ellipse", "polygon", "path", "star", "text"]);
+const SHAPE_TYPES = new Set(["rect", "ellipse", "polygon", "path", "star", "text", "image"]);
+
+/** Como uma imagem se acomoda na caixa reservada para ela. */
+const IMAGE_FITS = new Set(["cover", "contain", "stretch"]);
 const LINE_CAPS = new Set(["butt", "round", "square"]);
 const LINE_JOINS = new Set(["miter", "round", "bevel"]);
 const TEXT_ALIGNS = new Set(["left", "center", "right"]);
@@ -168,6 +171,32 @@ function validateShape(shape, at, errors, warnings, canvas) {
       }
       break;
     }
+    case "image": {
+      // Foto, textura, logo — o que não é vetor e não deve ser aproximado com formas.
+      // Redesenhar uma fotografia com shapes produz algo pior que um placeholder
+      // honesto, e redesenhar um logo é pior ainda: ele tem versão oficial, e uma
+      // aproximação feita de print é uso indevido de marca.
+      ["x", "y", "w", "h"].forEach(need);
+      if (isFiniteNumber(shape.w) && shape.w <= 0) errors.push(`${at}.shape.w precisa ser > 0`);
+      if (isFiniteNumber(shape.h) && shape.h <= 0) errors.push(`${at}.shape.h precisa ser > 0`);
+
+      if (shape.source != null && (typeof shape.source !== "string" || shape.source === "")) {
+        errors.push(`${at}.shape.source precisa ser o caminho do arquivo, ou um nome de asset da marca`);
+      }
+
+      if (shape.fit != null && !IMAGE_FITS.has(shape.fit)) {
+        warnings.push(`${at}.shape.fit inválido (${shape.fit}) — usando "cover"`);
+      }
+
+      if (shape.source == null) {
+        warnings.push(
+          `${at} vai entrar como PLACEHOLDER — sem \`source\`, não há arquivo para colocar. ` +
+            "A camada fica marcada em laranja na timeline para você trocar pela imagem real."
+        );
+      }
+      break;
+    }
+
     case "text": {
       ["x", "y", "fontSize"].forEach(need);
       if (typeof shape.content !== "string" || shape.content === "") {
@@ -231,6 +260,7 @@ function validatePaint(paint, at, isStroke, errors, warnings) {
 export function shapeBounds(shape) {
   switch (shape.type) {
     case "rect":
+    case "image":
       return { x: shape.x, y: shape.y, width: shape.w, height: shape.h };
     case "ellipse":
       return { x: shape.cx - shape.rx, y: shape.cy - shape.ry, width: shape.rx * 2, height: shape.ry * 2 };
@@ -316,6 +346,14 @@ export function normalizeScene(scene, options = {}) {
   const buckets = new Map();
 
   for (const el of sorted) {
+    // Imagem e texto são tipos de camada próprios no AE, e nenhum dos dois cabe dentro
+    // de um shape layer. Os dois saem daqui antes do agrupamento — o `continue` é o que
+    // impede o elemento de virar camada E item de grupo ao mesmo tempo.
+    if (el.shape.type === "image") {
+      layers.push(buildImageLayer(el));
+      continue;
+    }
+
     if (el.shape.type === "text") {
       layers.push(buildTextLayer(el));
       continue;
@@ -442,6 +480,31 @@ function resolveGeometry(shape) {
     default:
       throw new Error(`resolveGeometry: tipo não suportado "${shape.type}"`);
   }
+}
+
+/**
+ * Camada de imagem: um arquivo colocado na caixa, ou um placeholder marcado.
+ *
+ * `label` é o que o designer vai ler na timeline quando não houver arquivo. Vale mais
+ * que o nome do elemento porque descreve o conteúdo esperado — "foto do produto em
+ * fundo claro" diz o que colocar; "Imagem 3" não diz nada.
+ */
+function buildImageLayer(el) {
+  const s = el.shape;
+
+  return {
+    type: "image",
+    name: el.name || el.id,
+    id: el.id,
+    x: s.x,
+    y: s.y,
+    width: s.w,
+    height: s.h,
+    source: typeof s.source === "string" && s.source !== "" ? s.source : null,
+    fit: IMAGE_FITS.has(s.fit) ? s.fit : "cover",
+    label: typeof s.label === "string" ? s.label : "",
+    opacity: clamp(numOr(el.fill?.opacity, 100), 0, 100),
+  };
 }
 
 function buildTextLayer(el) {

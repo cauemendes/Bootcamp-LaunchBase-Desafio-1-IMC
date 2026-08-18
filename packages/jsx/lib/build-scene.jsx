@@ -15,7 +15,7 @@
 //@include "ae-font.jsx"
 //@include "ae-text.jsx"
 
-/*global app, vec, CompItem*/
+/*global app, Folder, vec, CompItem*/
 
 /**
  * @param {String} specPath  caminho do JSON escrito pelo painel
@@ -84,7 +84,10 @@ function vecBuildScene(scene, options) {
     for (var i = 0; i < scene.layers.length; i++) {
       var spec = scene.layers[i];
       try {
-        if (spec.type === "text") {
+        if (spec.type === "image") {
+          var img = vec.addImageLayer(comp, spec, buildOpts);
+          if (img.warning) warnings.push(img.warning);
+        } else if (spec.type === "text") {
           var result = vec.addTextLayer(comp, spec, buildOpts);
           if (result.fontWarning) warnings.push(result.fontWarning);
         } else {
@@ -104,6 +107,13 @@ function vecBuildScene(scene, options) {
     return {
       ok: true,
       compName: comp.name,
+      // Quem decide salvar é o usuário. O que a ferramenta deve fazer é não deixar
+      // isso passar em branco quando ele estiver produzindo em série: vinte telas numa
+      // noite, o AE fechando, e nada em disco é o pior desfecho possível.
+      projectFile: app.project && app.project.file ? app.project.file.fsName : null,
+      suggestedSavePath: app.project && app.project.file
+        ? null
+        : Folder.desktop.fsName + "/" + vec.safeName(compName, "cena") + ".aep",
       layerCount: comp.numLayers,
       warnings: warnings,
     };

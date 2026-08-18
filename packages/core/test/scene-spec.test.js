@@ -347,3 +347,85 @@ test("gradiente sem pontos é aceito — o adapter usa a diagonal do elemento", 
   assert.equal(item.start, null);
   assert.equal(item.end, null);
 });
+
+// ---------------------------------------------------------------- imagem
+
+test("imagem com arquivo vira camada própria, não item de shape layer", () => {
+  // Footage não cabe dentro de um shape layer — tem que ser camada.
+  const cena = {
+    version: "1.0",
+    canvas: { width: 1000, height: 800 },
+    elements: [
+      {
+        id: "foto",
+        name: "Foto / Produto",
+        shape: { type: "image", x: 120, y: 340, w: 480, h: 360, fit: "contain", source: "/tmp/foto.png" },
+      },
+    ],
+  };
+
+  assert.equal(validateScene(cena).ok, true);
+
+  const layer = normalizeScene(cena).layers[0];
+  assert.equal(layer.type, "image");
+  assert.equal(layer.source, "/tmp/foto.png");
+  assert.equal(layer.fit, "contain");
+  assert.deepEqual([layer.x, layer.y, layer.width, layer.height], [120, 340, 480, 360]);
+});
+
+test("imagem sem arquivo é aceita e avisa que entra como placeholder", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 1000, height: 800 },
+    elements: [
+      {
+        id: "foto",
+        name: "Foto",
+        shape: { type: "image", x: 0, y: 0, w: 100, h: 100, label: "foto do produto" },
+      },
+    ],
+  };
+
+  const r = validateScene(cena);
+  assert.equal(r.ok, true, "placeholder é uma escolha válida, não um erro");
+  assert.match(r.warnings.join(" "), /PLACEHOLDER/);
+
+  const layer = normalizeScene(cena).layers[0];
+  assert.equal(layer.source, null);
+  assert.equal(layer.label, "foto do produto");
+});
+
+test("imagem sem dimensão é erro", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [{ id: "x", name: "X", shape: { type: "image", x: 0, y: 0, w: 0, h: 50 } }],
+  };
+
+  assert.match(validateScene(cena).errors.join(" "), /w precisa ser > 0/);
+});
+
+test("fit inválido é aviso e cai em cover", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      { id: "x", name: "X", shape: { type: "image", x: 0, y: 0, w: 50, h: 50, fit: "esticar", source: "/a.png" } },
+    ],
+  };
+
+  assert.match(validateScene(cena).warnings.join(" "), /fit inválido/);
+  assert.equal(normalizeScene(cena).layers[0].fit, "cover");
+});
+
+test("imagem fora do canvas recebe o mesmo aviso de enquadramento das formas", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      { id: "x", name: "X", shape: { type: "image", x: 500, y: 500, w: 50, h: 50, source: "/a.png" } },
+    ],
+  };
+
+  assert.match(validateScene(cena).warnings.join(" "), /fora do canvas/);
+});

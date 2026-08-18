@@ -86,6 +86,19 @@ export function validateBrand(brand) {
     warnings.push("snapTolerance inválido — usando o padrão");
   }
 
+  const assets = brand.assets;
+  if (assets != null) {
+    if (typeof assets !== "object" || Array.isArray(assets)) {
+      errors.push("assets precisa ser um objeto { nome: caminho do arquivo }");
+    } else {
+      for (const [token, caminho] of Object.entries(assets)) {
+        if (typeof caminho !== "string" || caminho === "") {
+          errors.push(`assets.${token}: precisa ser o caminho do arquivo`);
+        }
+      }
+    }
+  }
+
   if (brand.notes != null) {
     if (!Array.isArray(brand.notes) || brand.notes.some((n) => typeof n !== "string")) {
       errors.push("notes precisa ser uma lista de textos");
@@ -125,6 +138,11 @@ function readBrand(brand) {
     colors,
     fonts,
     notes: Array.isArray(brand?.notes) ? brand.notes.filter((n) => typeof n === "string") : [],
+    assets: new Map(
+      Object.entries(brand?.assets ?? {})
+        .filter(([, caminho]) => typeof caminho === "string" && caminho !== "")
+        .map(([token, caminho]) => [token.toLowerCase(), caminho])
+    ),
     fallbackFont:
       typeof brand?.fallbackFont === "string" && brand.fallbackFont !== ""
         ? brand.fallbackFont
@@ -166,7 +184,7 @@ function nearestBrandColor(hex, colors, tolerance) {
 export function applyBrand(scene, brand, { snapColors = true } = {}) {
   const b = readBrand(brand);
   const warnings = [];
-  const applied = { colors: 0, fonts: 0, snapped: 0, unresolved: [] };
+  const applied = { colors: 0, fonts: 0, assets: 0, snapped: 0, unresolved: [] };
 
   const resolveColor = (valor, onde) => {
     if (typeof valor !== "string" || valor === "") return valor;
@@ -227,6 +245,31 @@ export function applyBrand(scene, brand, { snapColors = true } = {}) {
 
   const resolveShape = (shape, onde) => {
     if (shape == null || typeof shape !== "object") return shape;
+
+    // Logo é o caso em que aproximar é pior que não fazer: existe versão oficial, e
+    // uma redesenhada de print é uso indevido da marca. Por isso `source` aceita um
+    // nome de asset — "logo" resolve para o arquivo real que o cliente entregou.
+    if (shape.type === "image") {
+      const pedido = shape.source;
+      if (typeof pedido !== "string" || pedido === "" || pedido.indexOf("/") !== -1) {
+        return shape;
+      }
+
+      const achado = b.assets.get(pedido.toLowerCase());
+      if (achado) {
+        applied.assets++;
+        return { ...shape, source: achado };
+      }
+
+      applied.unresolved.push(pedido);
+      warnings.push(
+        `${onde}: asset "${pedido}" não existe na marca` +
+          (b.assets.size ? ` (disponíveis: ${[...b.assets.keys()].join(", ")})` : "") +
+          " — a camada vai entrar como placeholder"
+      );
+      return { ...shape, source: null };
+    }
+
     if (shape.type !== "text") return shape;
 
     const pedida = shape.fontFamily;
@@ -312,6 +355,10 @@ export function brandSummary(brand) {
     );
   } else {
     linhas.push(`Fontes: nenhuma definida — texto sai em ${b.fallbackFont}`);
+  }
+
+  if (b.assets.size) {
+    linhas.push("Assets (use o nome em `source` de uma forma `image`): " + [...b.assets.keys()].join(", "));
   }
 
   // As regras de uso vêm antes da explicação do formato: um manual de marca real tem
