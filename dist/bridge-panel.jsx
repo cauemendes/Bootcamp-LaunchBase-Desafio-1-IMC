@@ -2018,6 +2018,61 @@ vec.tools.build_scene = function (args) {
   return vecBuildScene(args.scene, args.options || {});
 };
 
+/**
+ * Salva o projeto.
+ *
+ * ── A armadilha que isto existe para evitar ───────────────────────────────────
+ * `app.project.save()` num projeto que nunca foi salvo abre o diálogo de "salvar
+ * como". Diálogo modal congela a thread principal do After Effects — que é a mesma
+ * que roda o polling do painel. O comando nunca responde, todo comando seguinte dá
+ * timeout, e nada na tela explica que a ponte está esperando um clique.
+ *
+ * Então: projeto sem arquivo exige `path`. Nunca deixamos o diálogo aparecer.
+ */
+vec.tools.save_project = function (args) {
+  args = args || {};
+
+  var jaTemArquivo = !!(app.project && app.project.file);
+
+  if (!jaTemArquivo && !args.path) {
+    throw new Error(
+      "Este projeto nunca foi salvo, então preciso de um caminho completo em `path` " +
+        "(terminando em .aep). Salvar sem caminho abriria um diálogo modal, que " +
+        "congelaria a ponte esperando um clique."
+    );
+  }
+
+  if (args.path) {
+    var destino = new File(args.path);
+
+    if (!/\.aep$/i.test(decodeURI(destino.name))) {
+      throw new Error("O caminho precisa terminar em .aep — recebi: " + destino.fsName);
+    }
+
+    var pasta = destino.parent;
+    if (!pasta.exists && !pasta.create()) {
+      throw new Error("Não consegui criar a pasta " + pasta.fsName + ".");
+    }
+
+    var sobrescreveu = destino.exists;
+    app.project.save(destino);
+
+    return {
+      path: app.project.file ? app.project.file.fsName : destino.fsName,
+      overwrote: sobrescreveu,
+      wasUnsaved: !jaTemArquivo,
+    };
+  }
+
+  app.project.save();
+
+  return {
+    path: app.project.file.fsName,
+    overwrote: true,
+    wasUnsaved: false,
+  };
+};
+
 vec.tools.animate = function (args) {
   args = args || {};
   if (!args.tracks || !(args.tracks instanceof Array)) {

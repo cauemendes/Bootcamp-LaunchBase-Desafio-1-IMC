@@ -106,6 +106,7 @@ e a lista de comps, está tudo ligado.
 | `build_scene` | Constrói camadas vetoriais a partir de um SceneSpec |
 | `describe_animation_format` | Explica o formato do AnimSpec |
 | `animate_layers` | Anima camadas com keyframes editáveis |
+| `save_project` | Grava o .aep — nada do que foi criado está em disco antes disso |
 | `execute_script` | ExtendScript arbitrário — o escape hatch |
 
 ### A marca entra antes, não depois
@@ -133,7 +134,7 @@ as cores vêm da imagem e o texto sai em Arial.
 
 ### Sobre o tamanho do conjunto
 
-São quatorze, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+São quinze, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
@@ -172,6 +173,18 @@ decisão continua sua.
 E o stagger segue a **ordem da lista**, não o índice da camada na timeline. Escalonar
 por índice dá resultado aleatório e parece erro; a ordem de leitura do design é uma
 decisão de quem monta o spec.
+
+### Nada está salvo até `save_project`
+
+`build_scene` e `animate_layers` mexem na memória do After Effects. O `.aep` em disco
+continua como estava, e o trabalho some se o aplicativo fechar. É o comportamento
+normal do AE — mas numa sessão em que o Claude constrói vinte camadas, é fácil sair
+achando que está tudo guardado.
+
+`save_project` tem uma proteção que não é opcional: projeto que nunca foi salvo exige
+`path`. Sem arquivo definido, `app.project.save()` abre o diálogo de "salvar como", e
+diálogo modal congela a thread que roda o polling do painel — a ponte para de
+responder esperando um clique, e nada na tela diz isso.
 
 ### `measure_image` tira o palpite do caminho
 

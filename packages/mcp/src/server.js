@@ -11,7 +11,7 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Quatorze ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Quinze ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
@@ -537,7 +537,41 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         marca: marca ? marca.slug : "nenhuma — cores da imagem, texto em Arial",
         avisos: avisos.length ? avisos : undefined,
         proximoPasso:
-          "Chame save_frame para ver o resultado antes de considerar a tarefa concluída.",
+          "Chame save_frame para ver o resultado antes de considerar a tarefa concluída. " +
+          "As camadas existem só na memória do After Effects até save_project rodar.",
+      });
+    }
+  );
+
+  server.registerTool(
+    "save_project",
+    {
+      title: "Salvar o projeto",
+      description:
+        "Grava o .aep em disco. Nada do que build_scene e animate_layers criam está " +
+        "salvo até isto rodar — o trabalho existe na memória do After Effects e some " +
+        "se ele fechar.\n\n" +
+        "Sobrescreve o arquivo atual. Se o projeto nunca foi salvo, `path` é " +
+        "obrigatório: salvar sem caminho abriria um diálogo modal no After Effects, e " +
+        "diálogo modal congela a ponte esperando um clique que ninguém vai dar.\n\n" +
+        "PERGUNTE ao usuário antes de sobrescrever um projeto que ele já salvou.",
+      inputSchema: {
+        path: z
+          .string()
+          .optional()
+          .describe(
+            "Caminho completo terminando em .aep. Omitido = sobrescreve onde o projeto " +
+              "já está. Obrigatório se o projeto nunca foi salvo."
+          ),
+      },
+    },
+    async (args) => {
+      const { result } = await call("save_project", args, { timeoutMs: 120_000 });
+
+      return asText({
+        salvo: result.path,
+        sobrescreveu: result.overwrote,
+        primeiraVez: result.wasUnsaved || undefined,
       });
     }
   );
@@ -610,7 +644,8 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         avisos: avisos.length ? avisos : undefined,
         proximoPasso:
           "Chame save_frame em dois ou três instantes diferentes e olhe — nenhuma " +
-          "chamada ter dado erro não é a mesma coisa que o timing ter ficado bom.",
+          "chamada ter dado erro não é a mesma coisa que o timing ter ficado bom. " +
+          "Os keyframes existem só na memória do After Effects até save_project rodar.",
       });
     }
   );
