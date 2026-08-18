@@ -398,6 +398,11 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .optional()
           .describe(
             'Arquivos da marca por nome, ex.: {"logo": "/Users/eu/marca/logo.ai"}. ' +
+              "Formatos que o After Effects importa: .ai, .eps, .pdf (vetor, escala sem " +
+              "perder) ou .png grande com transparência. **SVG o AE não importa** — nunca " +
+              "importou. Caminho absoluto, e o arquivo precisa existir em disco: não dá " +
+              "para usar uma imagem colada na conversa, porque o que vai para a camada é " +
+              "o arquivo, não a visualização. " +
               "Logo NUNCA deve ser redesenhado a partir de print: existe versão oficial, " +
               "e a aproximação é uso indevido de marca. Com o asset registrado, uma forma " +
               '`image` com `"source": "logo"` coloca o arquivo real. Pergunte ao usuário ' +

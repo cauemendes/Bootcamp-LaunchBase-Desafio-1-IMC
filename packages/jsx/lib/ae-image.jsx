@@ -32,6 +32,18 @@ vec.LABEL = {
   asset: 3, // aqua: arquivo colocado, confira o enquadramento
 };
 
+/**
+ * Se o arquivo é arte vetorial.
+ *
+ * O After Effects **não importa SVG** — nunca importou. Os formatos vetoriais que ele
+ * lê são .ai, .eps e .pdf. Saber disso antes evita a descoberta pelo caminho ruim: o
+ * import falha e a camada simplesmente não aparece.
+ */
+function vecEhVetor(arquivo) {
+  var nome = decodeURI(arquivo.name).toLowerCase();
+  return /\.(ai|eps|pdf)$/.test(nome);
+}
+
 /** Escala que faz a imagem cobrir ou caber na caixa, preservando proporção. */
 function vecEscalaParaCaixa(larguraFonte, alturaFonte, caixaW, caixaH, fit) {
   if (!larguraFonte || !alturaFonte) return [100, 100];
@@ -77,6 +89,13 @@ vec.addImageLayer = function (comp, spec, opts) {
   if (spec.source) {
     var arquivo = new File(spec.source);
 
+    if (/\.svg$/i.test(decodeURI(arquivo.name))) {
+      aviso = 'SVG não é importável pelo After Effects: "' + spec.name + '" (' +
+        arquivo.fsName + "). Converta para .ai ou .pdf, ou use PNG grande com " +
+        "transparência. Entrou como placeholder.";
+      return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
+    }
+
     if (!arquivo.exists) {
       // Caminho errado não pode virar camada silenciosamente ausente: cai para
       // placeholder e o aviso diz o caminho que faltou.
@@ -91,6 +110,17 @@ vec.addImageLayer = function (comp, spec, opts) {
     layer.name = vec.safeName(spec.name, "Image");
     layer.label = vec.LABEL.asset;
     layer.comment = "Placed by Vectorize AE - check the framing";
+
+    // Arte vetorial precisa de rasterização contínua para escalar sem serrilhar. Sem
+    // isto, um logo .ai colocado a 40% e depois ampliado num zoom sai borrado — e o
+    // logo é justamente o elemento em que ninguém perdoa perda de qualidade.
+    if (vecEhVetor(arquivo)) {
+      try {
+        layer.collapseTransformation = true;
+      } catch (e) {
+        // Nem todo tipo de footage aceita; não vale derrubar a colocação por isso.
+      }
+    }
 
     var t = layer.property("ADBE Transform Group");
     var escala = vecEscalaParaCaixa(

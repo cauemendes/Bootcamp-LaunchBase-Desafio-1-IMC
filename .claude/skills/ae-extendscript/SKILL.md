@@ -267,6 +267,16 @@ Consequência de projeto: o padrão `.tmp` + `rename` para escrita atômica **n�
 confiável em subpasta**. Quem lê precisa tratar JSON incompleto como "ainda não
 chegou" e tentar de novo, em vez de estourar.
 
+## Importação de arte: o AE não lê SVG
+
+Formatos vetoriais que o After Effects importa: **.ai, .eps, .pdf**. SVG não — nunca
+leu. O import falha e a camada simplesmente não aparece, o que na prática vira "sumiu
+uma camada" no meio de uma cena com vinte.
+
+Ao colocar arte vetorial, ligue `layer.collapseTransformation = true`. É a rasterização
+contínua: sem ela, um `.ai` colocado a 40% e depois ampliado sai borrado. No logo do
+cliente isso é o tipo de detalhe que ninguém perdoa.
+
 ## Não renderize para `Folder.temp` no macOS
 
 `Folder.temp` resolve para `/private/var/folders/…/T/TemporaryItems`, uma pasta
