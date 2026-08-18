@@ -209,6 +209,19 @@ export function applyBrand(scene, brand, { snapColors = true } = {}) {
 
   const resolvePaint = (paint, onde) => {
     if (paint == null || typeof paint !== "object") return paint;
+
+    // Gradiente tem duas cores e nenhuma delas se chama `color`. Sem este caso,
+    // `"from": "primary"` chegaria ao After Effects como a string "primary" e o
+    // designer veria um token no nome do grupo em vez do hexadecimal que precisa
+    // digitar.
+    if (paint.type === "gradient") {
+      return {
+        ...paint,
+        from: resolveColor(paint.from, `${onde}.from`),
+        to: resolveColor(paint.to, `${onde}.to`),
+      };
+    }
+
     return { ...paint, color: resolveColor(paint.color, `${onde}.color`) };
   };
 

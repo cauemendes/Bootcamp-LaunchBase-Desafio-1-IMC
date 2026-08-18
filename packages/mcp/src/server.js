@@ -36,7 +36,7 @@ import {
 import { Bridge, BridgeError } from "./bridge.js";
 import { BrandStore } from "./brand-store.js";
 import { ANIM_FORMAT_GUIDE } from "./anim-guide.js";
-import { SCENE_FORMAT_GUIDE } from "./scene-guide.js";
+import { sceneFormatGuide } from "./scene-guide.js";
 
 /**
  * O que responder quando não há marca configurada.
@@ -440,10 +440,24 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       title: "Formato do SceneSpec",
       description:
         "Explica o formato JSON que build_scene aceita, com todos os tipos de forma e " +
-        "exemplos. Leia isto antes de usar build_scene pela primeira vez.",
-      inputSchema: {},
+        "exemplos. Leia isto antes de usar build_scene pela primeira vez.\n\n" +
+        "`fidelity` decide quanto medir antes de construir, e é o que separa uma " +
+        "reconstrução de três minutos de uma de vinte. Se o usuário não disse qual " +
+        "quer, PERGUNTE em vez de escolher por ele — é a escolha dele entre tempo e " +
+        "exatidão, e ela muda o resultado.",
+      inputSchema: {
+        fidelity: z
+          .enum(["draft", "balanced", "precise"])
+          .optional()
+          .describe(
+            "draft: rápido, mede só paleta e blocos grandes, sem iterar. " +
+              "balanced (padrão): mede todas as formas, uma rodada de conferência. " +
+              "precise: mede tudo e itera até a diferença ser imperceptível — vale " +
+              "quando a reconstrução vai virar base de uma animação longa."
+          ),
+      },
     },
-    async () => asText(SCENE_FORMAT_GUIDE)
+    async ({ fidelity }) => asText(sceneFormatGuide(fidelity))
   );
 
   server.registerTool(

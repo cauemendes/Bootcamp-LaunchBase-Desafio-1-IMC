@@ -200,10 +200,14 @@ function validatePaint(paint, at, isStroke, errors, warnings) {
     return;
   }
 
-  try {
-    normalizeHex(paint.color);
-  } catch (e) {
-    errors.push(`${at}.color: ${e.message}`);
+  if (paint.type === "gradient") {
+    validateGradient(paint, at, errors, warnings);
+  } else {
+    try {
+      normalizeHex(paint.color);
+    } catch (e) {
+      errors.push(`${at}.color: ${e.message}`);
+    }
   }
 
   if (paint.opacity != null && (!isFiniteNumber(paint.opacity) || paint.opacity < 0 || paint.opacity > 100)) {
@@ -459,7 +463,40 @@ function buildTextLayer(el) {
   };
 }
 
+/**
+ * Confere um gradiente.
+ *
+ * As duas cores são validadas mesmo o After Effects não aceitando definir paradas de
+ * gradiente por script. Elas não são decoração: vão para o nome do grupo e para o
+ * aviso, e é com elas que o designer preenche o gradiente em dois cliques. Aceitar um
+ * hex inválido aqui só transferiria o erro para o momento em que ele fosse ler o
+ * valor na tela.
+ */
+function validateGradient(paint, at, errors, warnings) {
+  for (const campo of ["from", "to"]) {
+    try {
+      normalizeHex(paint[campo]);
+    } catch (e) {
+      errors.push(`${at}.${campo}: ${e.message}`);
+    }
+  }
+
+  if (paint.kind != null && paint.kind !== "linear" && paint.kind !== "radial") {
+    warnings.push(`${at}.kind inválido (${paint.kind}) — usando "linear"`);
+  }
+
+  for (const ponto of ["start", "end"]) {
+    const v = paint[ponto];
+    if (v == null) continue;
+    if (!Array.isArray(v) || v.length !== 2 || !v.every(isFiniteNumber)) {
+      errors.push(`${at}.${ponto} precisa ser [x, y] em pixels do canvas`);
+    }
+  }
+}
+
 function normalizePaint(paint, isStroke) {
+  if (paint.type === "gradient") return normalizeGradient(paint, isStroke);
+
   const out = {
     color: safeHex(paint.color) || "#000000",
     opacity: clamp(numOr(paint.opacity, 100), 0, 100),
@@ -469,6 +506,36 @@ function normalizePaint(paint, isStroke) {
     out.cap = LINE_CAPS.has(paint.cap) ? paint.cap : "butt";
     out.join = LINE_JOINS.has(paint.join) ? paint.join : "miter";
   }
+  return out;
+}
+
+/**
+ * Gradiente normalizado para o adapter.
+ *
+ * `from` e `to` seguem viajando embora o After Effects não deixe defini-las por
+ * script: o adapter as usa no nome do grupo e no aviso, para o designer saber quais
+ * cores colocar sem voltar na imagem original.
+ */
+function normalizeGradient(paint, isStroke) {
+  const out = {
+    paint: "gradient",
+    // `gradient`, não `kind`: quem chama monta `{ kind: "fill", ...aqui }`, e um campo
+    // `kind` neste objeto sobrescreveria "fill" ou "stroke" no spread — o adapter
+    // deixaria de saber se pinta o interior ou o contorno, sem erro nenhum.
+    gradient: paint.kind === "radial" ? "radial" : "linear",
+    from: safeHex(paint.from) || "#000000",
+    to: safeHex(paint.to) || "#ffffff",
+    start: Array.isArray(paint.start) ? [numOr(paint.start[0], 0), numOr(paint.start[1], 0)] : null,
+    end: Array.isArray(paint.end) ? [numOr(paint.end[0], 0), numOr(paint.end[1], 0)] : null,
+    opacity: clamp(numOr(paint.opacity, 100), 0, 100),
+  };
+
+  if (isStroke) {
+    out.width = Math.max(0, numOr(paint.width, 1));
+    out.cap = LINE_CAPS.has(paint.cap) ? paint.cap : "butt";
+    out.join = LINE_JOINS.has(paint.join) ? paint.join : "miter";
+  }
+
   return out;
 }
 

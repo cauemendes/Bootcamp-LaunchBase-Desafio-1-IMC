@@ -257,3 +257,40 @@ test("notes malformado é erro, não aviso", () => {
   assert.equal(validateBrand({ ...MARCA, notes: [42] }).ok, false);
   assert.equal(validateBrand({ ...MARCA, notes: ["ok"] }).ok, true);
 });
+
+// ---------------------------------------------------------------- gradiente
+
+test("a marca resolve as duas cores de um gradiente", () => {
+  // Gradiente não tem campo `color`. Sem tratar isso, "primary" chegaria ao After
+  // Effects como a string literal e o designer veria um token no nome do grupo em vez
+  // do hexadecimal que precisa digitar.
+  const { scene, applied } = applyBrand(
+    cena([
+      {
+        shape: { type: "rect", x: 0, y: 0, w: 10, h: 10 },
+        fill: { type: "gradient", from: "primary", to: "ink" },
+      },
+    ]),
+    MARCA
+  );
+
+  assert.equal(scene.elements[0].fill.from, "#ff5a20");
+  assert.equal(scene.elements[0].fill.to, "#12263a");
+  assert.equal(applied.colors, 2);
+});
+
+test("hex medido num gradiente encosta na cor da marca", () => {
+  const { scene } = applyBrand(
+    cena([
+      {
+        shape: { type: "rect", x: 0, y: 0, w: 10, h: 10 },
+        stroke: { type: "gradient", from: "#ff5b1f", to: "#2e7d32", width: 2 },
+      },
+    ]),
+    MARCA
+  );
+
+  assert.equal(scene.elements[0].stroke.from, "#ff5a20", "encostou");
+  assert.equal(scene.elements[0].stroke.to, "#2e7d32", "longe da paleta, ficou como estava");
+  assert.equal(scene.elements[0].stroke.width, 2);
+});

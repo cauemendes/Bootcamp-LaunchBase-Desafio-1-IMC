@@ -6,6 +6,59 @@
  * vai de fato construir uma cena. Divulgação progressiva.
  */
 
+/**
+ * O quanto medir antes de construir.
+ *
+ * Não é um detalhe de implementação: é a decisão de negócio da ferramenta. Medir cada
+ * forma produz o resultado mais fiel e foi o que fez uma reconstrução levar dezessete
+ * minutos. Aproximar entrega em poucos minutos algo que já está editável — e editável
+ * é o ponto: o designer arruma um stroke grosso em segundos.
+ *
+ * O risco de aproximar é real e o usuário o nomeou: se a base sair torta e a animação
+ * for construída em cima, refazer custa mais do que teria custado medir. Por isso
+ * existe um nível intermediário como padrão, e a escolha é dele — não do modelo.
+ */
+const FIDELIDADE = {
+  draft: `## Nível de fidelidade: RASCUNHO
+
+Velocidade acima de exatidão. Meça o **essencial** e aproxime o resto:
+
+- Meça a paleta (as cores precisam estar certas — cor errada é o que mais incomoda).
+- Meça a caixa dos 3 ou 4 elementos maiores, que definem o enquadramento.
+- **Estime** o resto: posições relativas, tamanhos pequenos, raios de canto.
+- NÃO itere. Uma passada, um \`save_frame\` para conferir que nada saiu grotesco, e
+  entregue.
+- Diferença de poucos pixels não é problema a ser resolvido aqui — o arquivo está
+  editável e o ajuste leva segundos na mão do designer.
+
+Se algo sair claramente errado — elemento fora do lugar, cor que não existe no
+original — corrija esse item e só ele.`,
+
+  balanced: `## Nível de fidelidade: EQUILIBRADO (padrão)
+
+- Meça a paleta e a caixa de **todos** os elementos com \`measure_image\`.
+- Meça o raio dos cantos onde ele é visível.
+- Estime o que é barato de ajustar depois: espaçamento de texto, espessura de traço
+  fina, detalhe de poucos pixels.
+- Uma rodada de verificação com \`save_frame\`, corrigindo o que estiver claramente
+  fora. Não persiga diferença de 1 ou 2 pixels.`,
+
+  precise: `## Nível de fidelidade: PRECISO
+
+Exatidão acima de velocidade. Vale quando a reconstrução vai virar base de uma
+animação longa, e refazer depois sairia caro.
+
+- Meça **tudo**: cada forma, cada raio, cada espessura de traço, cada posição de texto.
+- Confira a espessura de traço com \`scanLine\` atravessando o traço, não no olho.
+- Renderize e compare com o original, iterando até a diferença ser imperceptível.
+- Reporte o que não deu para reproduzir em vez de aproximar em silêncio.`,
+};
+
+export function sceneFormatGuide(fidelity = "balanced") {
+  const nivel = FIDELIDADE[fidelity] ?? FIDELIDADE.balanced;
+  return `${SCENE_FORMAT_GUIDE}\n\n${nivel}\n`;
+}
+
 export const SCENE_FORMAT_GUIDE = `# SceneSpec — formato aceito por build_scene
 
 Descreve um design 2D como formas geométricas. O After Effects reconstrói isso como
@@ -78,6 +131,13 @@ continuar editável para ajuste e tradução.
 **Cores repetidas usam exatamente o mesmo hex.** Amostre do meio das áreas chapadas,
 longe das bordas, que estão suavizadas e devolvem cor errada.
 
+**Espessura de stroke medida no olho sai grossa.** A borda suavizada acrescenta um ou
+dois pixels de cada lado, e somá-los engorda o traço visivelmente — foi o desvio mais
+notado numa reconstrução real. Meça com \`scanLine\` atravessando o traço: o
+comprimento do trecho de cor sólida é a espessura, sem os pixels de transição. Na
+dúvida entre dois valores, escolha o menor: traço fino demais passa despercebido,
+grosso demais salta aos olhos.
+
 **Marca antes de cor medida.** Chame \`describe_brand\` antes de construir. Havendo
 marca configurada, escreva o nome no lugar do hexadecimal:
 
@@ -128,12 +188,42 @@ Quando o elemento estiver por cima de outra coisa — um cursor sobre uma interf
 amostre a cor dele longe da borda: os pixels da divisa são mistura das duas camadas e
 não são cor de nenhuma das duas.
 
+## Gradiente
+
+Suportado, com uma ressalva que importa. Use em \`fill\` ou \`stroke\`:
+
+\`\`\`json
+"fill": {
+  "type": "gradient",
+  "kind": "linear",
+  "from": "#ff6200",
+  "to": "#161d26",
+  "start": [100, 200],
+  "end": [980, 800]
+}
+\`\`\`
+
+\`kind\` é \`linear\` (padrão) ou \`radial\`. \`start\` e \`end\` são pontos no canvas;
+omitindo os dois, o adapter usa a diagonal do próprio elemento. \`from\` e \`to\`
+aceitam nome de cor da marca, igual a qualquer outra cor.
+
+**As duas cores não são aplicadas automaticamente.** A propriedade de paradas de
+gradiente do After Effects tem \`propertyValueType\` igual a \`NO_VALUE\` — a API não
+expõe, e não há como definir por script. Verificado no 26.3. O gradiente nasce no
+preto-e-branco padrão do AE e o designer define as cores em dois cliques.
+
+Para ele saber quais, as cores medidas vão para o **nome do grupo**:
+\`Fundo · #ff6200 → #161d26\`. Aparece na timeline, do lado de quem vai editar. Então
+meça as duas pontas com \`measure_image\` e informe os valores reais — eles são a
+instrução, mesmo não sendo aplicados.
+
+Se exatidão automática importar mais que estrutura, o efeito Gradient Ramp
+(\`ADBE Ramp\`) tem Start Color e End Color scriptáveis: um solid com Ramp e a shape
+como track matte, montado via \`execute_script\`. Custa duas camadas e um matte em vez
+de uma shape editável.
+
 ## Não suportado
 
-**Gradiente.** Verificado: a propriedade de paradas de gradiente do After Effects não
-é acessível por script (\`propertyValueType\` é \`NO_VALUE\`). Para uma área com
-gradiente, use a cor média chapada.
-
-Sombra, blur e textura também não têm representação no formato — aplique como efeito
-depois, via \`execute_script\`.
+Sombra, blur e textura não têm representação no formato — aplique como efeito depois,
+via \`execute_script\`.
 `;

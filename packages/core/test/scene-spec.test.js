@@ -240,3 +240,110 @@ test("shapeBounds cobre cada tipo de primitiva", () => {
 test("shapeBounds devolve null quando o path não é legível, em vez de quebrar", () => {
   assert.equal(shapeBounds({ type: "path", d: "isso não é um path" }), null);
 });
+
+// ---------------------------------------------------------------- gradiente
+
+test("gradiente válido passa e chega normalizado ao adapter", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      {
+        id: "fundo",
+        name: "Fundo",
+        shape: { type: "rect", x: 0, y: 0, w: 50, h: 50 },
+        fill: { type: "gradient", kind: "radial", from: "#FF6200", to: "#161D26", start: [0, 0], end: [50, 50] },
+      },
+    ],
+  };
+
+  assert.equal(validateScene(cena).ok, true);
+
+  const item = normalizeScene(cena).layers[0].contents[0].items.find((i) => i.kind === "fill");
+
+  assert.equal(item.paint, "gradient");
+  // O campo é `gradient`, não `kind`: um `kind` aqui sobrescreveria "fill" no spread
+  // e o adapter deixaria de saber se pinta o interior ou o contorno.
+  assert.equal(item.kind, "fill");
+  assert.equal(item.gradient, "radial");
+  assert.equal(item.from, "#ff6200");
+  assert.equal(item.to, "#161d26");
+});
+
+test("gradiente em stroke preserva largura, cap e join", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      {
+        id: "linha",
+        name: "Linha",
+        shape: { type: "rect", x: 0, y: 0, w: 50, h: 50 },
+        stroke: { type: "gradient", from: "#fff", to: "#000", width: 6, cap: "round", join: "round" },
+      },
+    ],
+  };
+
+  const item = normalizeScene(cena).layers[0].contents[0].items.find((i) => i.kind === "stroke");
+
+  assert.equal(item.paint, "gradient");
+  assert.equal(item.width, 6);
+  assert.equal(item.cap, "round");
+  assert.equal(item.join, "round");
+});
+
+test("gradiente com hex inválido é erro, e diz qual campo", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      {
+        id: "x",
+        name: "X",
+        shape: { type: "rect", x: 0, y: 0, w: 10, h: 10 },
+        fill: { type: "gradient", from: "nao-e-cor", to: "#000" },
+      },
+    ],
+  };
+
+  const r = validateScene(cena);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(" "), /\.from/);
+});
+
+test("ponto de gradiente malformado é erro", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      {
+        id: "x",
+        name: "X",
+        shape: { type: "rect", x: 0, y: 0, w: 10, h: 10 },
+        fill: { type: "gradient", from: "#fff", to: "#000", start: [1] },
+      },
+    ],
+  };
+
+  assert.match(validateScene(cena).errors.join(" "), /start/);
+});
+
+test("gradiente sem pontos é aceito — o adapter usa a diagonal do elemento", () => {
+  const cena = {
+    version: "1.0",
+    canvas: { width: 100, height: 100 },
+    elements: [
+      {
+        id: "x",
+        name: "X",
+        shape: { type: "rect", x: 0, y: 0, w: 10, h: 10 },
+        fill: { type: "gradient", from: "#fff", to: "#000" },
+      },
+    ],
+  };
+
+  assert.equal(validateScene(cena).ok, true);
+  const item = normalizeScene(cena).layers[0].contents[0].items.find((i) => i.kind === "fill");
+  assert.equal(item.start, null);
+  assert.equal(item.end, null);
+});

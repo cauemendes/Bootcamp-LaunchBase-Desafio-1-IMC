@@ -174,6 +174,27 @@ E o stagger segue a **ordem da lista**, não o índice da camada na timeline. Es
 por índice dá resultado aleatório e parece erro; a ordem de leitura do design é uma
 decisão de quem monta o spec.
 
+### Fidelidade é uma escolha, não um padrão escondido
+
+Medir cada forma dá o resultado mais fiel e foi o que fez uma reconstrução levar
+dezessete minutos. Aproximar entrega em poucos minutos algo que já está editável — e
+editável é o ponto: um stroke grosso demais se arruma em segundos.
+
+Mas aproximar tem risco real: se a base sair torta e a animação for construída em
+cima, refazer custa mais do que teria custado medir.
+
+Então a escolha é sua, por tarefa. `describe_scene_format` aceita `fidelity`:
+
+- **draft** — mede a paleta e os blocos maiores, estima o resto, não itera. Para
+  explorar e para peça descartável.
+- **balanced** (padrão) — mede todas as formas, uma rodada de conferência, não persegue
+  diferença de dois pixels.
+- **precise** — mede tudo e itera até a diferença ser imperceptível. Para quando a
+  reconstrução vai virar base de uma animação longa.
+
+A descrição da ferramenta manda perguntar quando você não disser qual quer, em vez de
+o modelo decidir por você.
+
 ### Nada está salvo até `save_project`
 
 `build_scene` e `animate_layers` mexem na memória do After Effects. O `.aep` em disco
@@ -185,6 +206,18 @@ achando que está tudo guardado.
 `path`. Sem arquivo definido, `app.project.save()` abre o diálogo de "salvar como", e
 diálogo modal congela a thread que roda o polling do painel — a ponte para de
 responder esperando um clique, e nada na tela diz isso.
+
+### Gradiente: geometria por script, cores pela sua mão
+
+Gradient fill e gradient stroke nativos são criados com o tipo e os pontos certos. As
+**paradas de cor não**: `ADBE Vector Grad Colors` tem `propertyValueType` igual a
+`NO_VALUE` e o After Effects não expõe essa propriedade para script — verificado no
+26.3. É a mesma limitação que o Overlord tem ao trazer arte do Illustrator.
+
+O que dá para fazer é não desperdiçar a medição. As duas cores são medidas na imagem e
+entram no **nome do grupo**: `Fundo · #ff6200 → #161d26`. Aparece na timeline, do lado
+de quem vai editar, e o gradiente se resolve em dois cliques sem precisar voltar à
+referência.
 
 ### `measure_image` tira o palpite do caminho
 

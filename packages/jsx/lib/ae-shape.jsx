@@ -60,9 +60,8 @@ vec.addShapeLayer = function (comp, spec, opts) {
 /** Adiciona um grupo (um elemento do design) dentro de Contents. */
 vec.addGroup = function (contents, groupSpec, opts) {
   var group = contents.addProperty("ADBE Vector Group");
-  group.name = vec.safeName(groupSpec.name, "Grupo");
-
   var inner = group.property("ADBE Vectors Group");
+  var cores = [];
 
   for (var i = 0; i < groupSpec.items.length; i++) {
     var item = groupSpec.items[i];
@@ -70,15 +69,96 @@ vec.addGroup = function (contents, groupSpec, opts) {
     if (item.kind === "geometry") {
       vec.addGeometry(inner, item.shape);
       vec.applyGeometryRotation(group, item.shape);
-    } else if (item.kind === "stroke") {
-      vec.addStroke(inner, item, opts);
-    } else if (item.kind === "fill") {
-      vec.addFill(inner, item, opts);
+    } else if (item.kind === "stroke" || item.kind === "fill") {
+      var eContorno = item.kind === "stroke";
+
+      if (item.paint === "gradient") {
+        vec.addGradient(inner, vecGradienteComPadrao(item, groupSpec), eContorno, opts);
+        // As cores pretendidas viram parte do nome: o AE não deixa definir paradas de
+        // gradiente por script, e sem isso o designer não tem como saber o que
+        // colocar sem voltar à imagem de origem.
+        cores.push(item.from + " → " + item.to);
+      } else if (eContorno) {
+        vec.addStroke(inner, item, opts);
+      } else {
+        vec.addFill(inner, item, opts);
+      }
     }
   }
 
+  var nome = vec.safeName(groupSpec.name, "Grupo");
+  group.name = cores.length ? nome + " · " + cores.join(" / ") : nome;
+
   return group;
 };
+
+/**
+ * Completa os pontos do gradiente quando o spec não os trouxe.
+ *
+ * Início e fim no mesmo lugar faz o After Effects renderizar cor chapada, e o
+ * resultado parece que o gradiente não foi aplicado. A diagonal do próprio elemento é
+ * o palpite mais útil: cobre a forma inteira e é o que um designer desenharia à mão.
+ */
+function vecGradienteComPadrao(item, groupSpec) {
+  if (item.start && item.end) return item;
+
+  var caixa = vecCaixaDoGrupo(groupSpec);
+  if (caixa === null) return item;
+
+  var copia = {};
+  for (var k in item) {
+    if (item.hasOwnProperty(k)) copia[k] = item[k];
+  }
+
+  copia.start = item.start || [caixa.x, caixa.y];
+  copia.end = item.end || [caixa.x + caixa.w, caixa.y + caixa.h];
+  return copia;
+}
+
+/** Caixa aproximada do elemento, a partir da geometria já normalizada. */
+function vecCaixaDoGrupo(groupSpec) {
+  for (var i = 0; i < groupSpec.items.length; i++) {
+    var item = groupSpec.items[i];
+    if (item.kind !== "geometry") continue;
+
+    var f = item.shape;
+
+    if (f.type === "rect") {
+      return { x: f.cx - f.w / 2, y: f.cy - f.h / 2, w: f.w, h: f.h };
+    }
+    if (f.type === "ellipse") {
+      return { x: f.cx - f.w / 2, y: f.cy - f.h / 2, w: f.w, h: f.h };
+    }
+    if (f.type === "star") {
+      var r = f.outerRadius;
+      return { x: f.cx - r, y: f.cy - r, w: r * 2, h: r * 2 };
+    }
+    if (f.type === "bezier" && f.subpaths && f.subpaths.length) {
+      return vecCaixaDeSubpaths(f.subpaths);
+    }
+  }
+
+  return null;
+}
+
+function vecCaixaDeSubpaths(subpaths) {
+  var minX = null, minY = null, maxX = null, maxY = null;
+
+  for (var i = 0; i < subpaths.length; i++) {
+    var v = subpaths[i].vertices;
+    for (var j = 0; j < v.length; j++) {
+      var x = v[j][0];
+      var y = v[j][1];
+      if (minX === null || x < minX) minX = x;
+      if (maxX === null || x > maxX) maxX = x;
+      if (minY === null || y < minY) minY = y;
+      if (maxY === null || y > maxY) maxY = y;
+    }
+  }
+
+  if (minX === null) return null;
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
 
 vec.addGeometry = function (inner, shape) {
   switch (shape.type) {
@@ -174,6 +254,48 @@ vec.applyGeometryRotation = function (group, shape) {
   t.property("ADBE Vector Anchor").setValue([shape.cx, shape.cy]);
   t.property("ADBE Vector Position").setValue([shape.cx, shape.cy]);
   t.property("ADBE Vector Rotation").setValue(shape.rotation);
+};
+
+/**
+ * Preenchimento ou contorno com gradiente nativo.
+ *
+ * ── O que dá e o que não dá ───────────────────────────────────────────────────
+ * A geometria é scriptável: tipo (linear ou radial) e os pontos de início e fim. As
+ * **paradas de cor não são**. `ADBE Vector Grad Colors` tem `propertyValueType` igual
+ * a `NO_VALUE` — não é questão de descobrir o formato do array, o After Effects
+ * simplesmente não expõe essa propriedade para script. Verificado no 26.3.
+ *
+ * Então o gradiente nasce com o preto-e-branco padrão do AE e o designer define as
+ * duas cores em dois cliques. Para isso ele precisa saber quais são, e é por isso que
+ * elas vão para o nome do grupo: "Fundo · #ff6200 → #161d26" aparece na timeline, do
+ * lado de quem vai editar, sem precisar voltar à imagem original.
+ *
+ * O ponto inicial padrão é o canto superior esquerdo do conteúdo e o final o inferior
+ * direito, porque um gradiente com os dois pontos no mesmo lugar é renderizado como
+ * cor chapada e parece que nada aconteceu.
+ */
+vec.addGradient = function (inner, spec, isStroke, opts) {
+  var matchName = isStroke
+    ? "ADBE Vector Graphic - G-Stroke"
+    : "ADBE Vector Graphic - G-Fill";
+
+  var g = inner.addProperty(matchName);
+
+  g.property("ADBE Vector Grad Type").setValue(spec.gradient === "radial" ? 2 : 1);
+
+  if (spec.start) g.property("ADBE Vector Grad Start Pt").setValue(spec.start);
+  if (spec.end) g.property("ADBE Vector Grad End Pt").setValue(spec.end);
+
+  if (isStroke) {
+    g.property("ADBE Vector Stroke Opacity").setValue(spec.opacity);
+    g.property("ADBE Vector Stroke Width").setValue(spec.width);
+    g.property("ADBE Vector Stroke Line Cap").setValue(vec.LINE_CAP[spec.cap] || vec.LINE_CAP.butt);
+    g.property("ADBE Vector Stroke Line Join").setValue(vec.LINE_JOIN[spec.join] || vec.LINE_JOIN.miter);
+  } else {
+    g.property("ADBE Vector Fill Opacity").setValue(spec.opacity);
+  }
+
+  return g;
 };
 
 vec.addFill = function (inner, spec, opts) {
