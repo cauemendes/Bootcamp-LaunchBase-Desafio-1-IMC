@@ -304,7 +304,12 @@ primitiva animável vale a pena.
 
 ## Performance
 
-- `app.beginSuppressDialogs(true)` evita que um diálogo trave um script em lote.
+- `app.beginSuppressDialogs()` / `app.endSuppressDialogs(false)` em volta de toda
+  operação longa. Diálogo modal congela a thread principal, que é a **mesma** que roda
+  o polling do painel da ponte: com alguém na frente é um clique, numa execução noturna
+  é tudo parado até de manhã. O que abre sem ser chamado: substituição de fonte,
+  footage faltando, confirmação de tamanho de comp. Restaure com `false` — despejar os
+  alertas acumulados no fim travaria o painel na saída.
 - Escrever propriedade é caro. Numa cena grande, o custo está no número de `setValue`,
   não na quantidade de JS.
 - `comp.openInViewer()` no fim, não a cada camada.
