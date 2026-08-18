@@ -11,16 +11,26 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Nove ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Doze ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
 
 import fs from "node:fs";
+import zlib from "node:zlib";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { applyBrand, brandSummary, normalizeScene, validateScene } from "@vectorize-ae/core";
+import {
+  applyBrand,
+  brandSummary,
+  decodePng,
+  measureRegion,
+  normalizeScene,
+  sampleColor,
+  scanLine,
+  validateScene,
+} from "@vectorize-ae/core";
 import { Bridge, BridgeError } from "./bridge.js";
 import { BrandStore } from "./brand-store.js";
 import { SCENE_FORMAT_GUIDE } from "./scene-guide.js";
@@ -184,7 +194,9 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       },
     },
     async (args) => {
-      const { result } = await call("save_frame", args, { timeoutMs: 60_000 });
+      // Timeout generoso: quando a API direta não entrega, o painel cai para a fila
+      // de render, que abre progresso e leva bem mais que os 60s de antes.
+      const { result } = await call("save_frame", args, { timeoutMs: 180_000 });
 
       let base64;
       try {
@@ -199,11 +211,113 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         content: [
           {
             type: "text",
-            text: `${result.comp} · ${result.width}×${result.height} · t=${result.time}s`,
+            text:
+              `${result.comp} · ${result.width}×${result.height} · t=${result.time}s` +
+              // Qual caminho funcionou importa: no 26.3 do macOS a API direta retorna
+              // sem erro e não grava nada, e a fila é o contorno. Saber disso evita
+              // rediagnosticar quando ficar lento, e revela quando a API voltar a
+              // funcionar numa versão futura.
+              (result.method && result.method !== "saveFrameToPng"
+                ? ` · via ${result.method}`
+                : ""),
           },
           { type: "image", data: base64, mimeType: "image/png" },
         ],
       };
+    }
+  );
+
+  // ---------------------------------------------------------------- medição
+
+  /** Decodifica uma vez por chamada — a mesma imagem costuma render várias medidas. */
+  const carregarPng = (caminho) => {
+    const bytes = fs.readFileSync(caminho);
+    return decodePng(new Uint8Array(bytes), (b) => new Uint8Array(zlib.inflateSync(Buffer.from(b))));
+  };
+
+  server.registerTool(
+    "measure_image",
+    {
+      title: "Medir uma imagem de referência",
+      description:
+        "Mede cor, extensão de forma e raio de canto direto nos pixels de um PNG. Use " +
+        "ANTES de montar um SceneSpec a partir de imagem: estimar coordenada e cor no " +
+        "olho produz um layout que parece certo até alguém pôr lado a lado com o " +
+        "original.\n\n" +
+        "As três operações são independentes e vêm na mesma chamada, porque a imagem é " +
+        "decodificada uma vez só:\n" +
+        "  • `samples` — cor num ponto. Devolve `uniformity`; abaixo de ~0.8 a amostra " +
+        "caiu em borda ou gradiente e o hex NÃO é uma cor do design.\n" +
+        "  • `regions` — a forma contígua que contém o ponto: limites, quanto ela " +
+        "preenche do próprio retângulo, e o raio de CADA canto separado.\n" +
+        "  • `lines` — onde a cor muda ao longo de uma linha. É como se acha borda.\n\n" +
+        "Só PNG. Para medir uma referência em JPEG, converta antes.",
+      inputSchema: {
+        path: z.string().describe("Caminho absoluto do PNG."),
+        samples: z
+          .array(z.object({ x: z.number().int(), y: z.number().int() }))
+          .optional()
+          .describe("Pontos a amostrar. Amostre o meio das áreas chapadas, longe das bordas."),
+        regions: z
+          .array(z.object({ x: z.number().int(), y: z.number().int() }))
+          .optional()
+          .describe("Sementes: um ponto dentro de cada forma que você quer medir."),
+        lines: z
+          .array(
+            z.object({
+              axis: z.enum(["horizontal", "vertical"]),
+              at: z.number().int().describe("y da linha, ou x da coluna."),
+              from: z.number().int().optional(),
+              to: z.number().int().optional(),
+            })
+          )
+          .optional()
+          .describe("Varreduras para achar bordas."),
+        radius: z.number().int().optional().describe("Raio do bloco de amostragem. Padrão 3."),
+        tolerance: z
+          .number()
+          .optional()
+          .describe(
+            "Distância de cor que ainda conta como a mesma. Padrão 12 — cobre ruído de " +
+              "compressão. Aumente para imagem muito comprimida."
+          ),
+      },
+    },
+    async ({ path: caminho, samples = [], regions = [], lines = [], radius, tolerance }) => {
+      let img;
+      try {
+        img = carregarPng(caminho);
+      } catch (err) {
+        return asError(`Não consegui ler ${caminho}: ${err.message}`);
+      }
+
+      const opcoes = {};
+      if (tolerance != null) opcoes.tolerance = tolerance;
+
+      // Uma medição fora dos limites não pode derrubar as outras: quem pediu dez
+      // pontos prefere nove medidos e um avisado a nenhum.
+      const tentar = (fn) => {
+        try {
+          return fn();
+        } catch (err) {
+          return { error: err.message };
+        }
+      };
+
+      return asText({
+        image: { width: img.width, height: img.height },
+        samples: samples.map((p) => ({
+          ...p,
+          ...tentar(() => sampleColor(img, p.x, p.y, { ...opcoes, radius: radius ?? 3 })),
+        })),
+        regions: regions.map((p) => ({
+          seed: p,
+          ...tentar(() => measureRegion(img, p.x, p.y, opcoes)),
+        })),
+        lines: lines.map((l) =>
+          tentar(() => scanLine(img, l.axis, l.at, { ...opcoes, from: l.from ?? 0, to: l.to ?? null }))
+        ),
+      });
     }
   );
 

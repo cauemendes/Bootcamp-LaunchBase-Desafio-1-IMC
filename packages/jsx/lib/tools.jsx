@@ -20,6 +20,7 @@
 //@include "ae-font.jsx"
 //@include "ae-text.jsx"
 //@include "ae-read.jsx"
+//@include "ae-frame.jsx"
 //@include "build-scene.jsx"
 
 /*global app, File, Folder, CompItem*/
@@ -79,19 +80,13 @@ vec.tools.list_fonts = function (args) {
  * conclui que funcionou porque nenhuma chamada deu erro — o que não é a mesma coisa
  * que ter ficado bom.
  *
- * `saveFrameToPng` é o caminho nativo do After Effects: nada de fila de render,
- * nada de plugin externo, nada de snapshot manual.
+ * A gravação em si está em `vec.saveFrame`, que confere o disco depois de chamar a
+ * API nativa e cai para a fila de render quando ela não entrega — no 26.3 do macOS
+ * `saveFrameToPng` retorna sem erro e não grava nada.
  */
 vec.tools.save_frame = function (args) {
   args = args || {};
   var comp = vec.findComp(args.compName);
-
-  if (typeof comp.saveFrameToPng !== "function") {
-    throw new Error(
-      "Esta versão do After Effects não expõe saveFrameToPng. " +
-        "Sem ela, a captura de frame teria que passar pela fila de render."
-    );
-  }
 
   var time = typeof args.time === "number" ? args.time : comp.time;
 
@@ -105,15 +100,12 @@ vec.tools.save_frame = function (args) {
     ? new File(args.path)
     : new File(Folder.temp.fsName + "/vectorize-ae-frame-" + new Date().getTime() + ".png");
 
-  comp.saveFrameToPng(time, destino);
-
-  if (!destino.exists) {
-    throw new Error("O After Effects não gravou o arquivo em " + destino.fsName + ".");
-  }
+  var saida = vec.saveFrame(comp, time, destino);
 
   return {
-    path: destino.fsName,
-    time: round3(time),
+    path: saida.file.fsName,
+    method: saida.method,
+    time: round3(saida.time),
     comp: comp.name,
     width: comp.width,
     height: comp.height,

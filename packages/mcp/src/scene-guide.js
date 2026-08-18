@@ -99,6 +99,30 @@ paleta.
 máquina antes de pedir por ela. Fonte ausente é substituída em silêncio e o layout
 muda. Sem certeza, deixe \`fontFamily\` vazio e ajuste depois.
 
+## Reconstruir só uma parte
+
+Nem toda tarefa é a imagem inteira. "Só o cursor do mouse", "só o card do meio", "só
+o botão" são pedidos comuns e o caminho é o mesmo — muda o escopo, não o método.
+
+Monte o SceneSpec **apenas com os elementos pedidos**, e chame \`build_scene\` com
+\`reuseComp: true\` para as camadas entrarem na composição que já está aberta, em vez
+de criar uma nova.
+
+Duas coisas que decidem se o resultado presta:
+
+**Mantenha as coordenadas do original.** O canvas continua sendo a imagem inteira e
+o elemento continua na posição em que ele aparece nela. Recortar o canvas em volta do
+elemento parece mais limpo e destrói o alinhamento com o resto da cena — e alinhar de
+novo à mão é o trabalho que se queria evitar.
+
+**Meça antes.** \`measure_image\` com uma semente dentro da forma devolve os limites
+exatos e o raio de cada canto. Estimar no olho um elemento pequeno erra
+proporcionalmente mais que estimar um grande.
+
+Quando o elemento estiver por cima de outra coisa — um cursor sobre uma interface —
+amostre a cor dele longe da borda: os pixels da divisa são mistura das duas camadas e
+não são cor de nenhuma das duas.
+
 ## Não suportado
 
 **Gradiente.** Verificado: a propriedade de paradas de gradiente do After Effects não

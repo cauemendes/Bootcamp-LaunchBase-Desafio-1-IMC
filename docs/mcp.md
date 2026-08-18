@@ -99,6 +99,7 @@ e a lista de comps, está tudo ligado.
 | `describe_layer` | Detalha uma camada: transform, keyframes, efeitos, shapes, texto |
 | `list_fonts` | Fontes instaladas nesta máquina |
 | `save_frame` | Renderiza um frame **e devolve a imagem**, para o Claude ver o resultado |
+| `measure_image` | Mede cor, forma e raio de canto nos pixels de um PNG |
 | `describe_brand` | Cores e fontes da marca em uso |
 | `set_brand` | Registra a identidade do cliente, ou troca de perfil |
 | `describe_scene_format` | Explica o formato do SceneSpec |
@@ -142,8 +143,28 @@ Sem ver o resultado, o modelo aplica uma animação e conclui que funcionou porq
 nenhuma chamada deu erro — o que não é a mesma coisa que ter ficado bom. Com
 `save_frame` ele renderiza, olha, e corrige.
 
-Usa `comp.saveFrameToPng()`, que é nativo do After Effects: sem fila de render, sem
-plugin, sem snapshot manual.
+Tenta primeiro `comp.saveFrameToPng()`, que é o caminho nativo. No After Effects 26.3
+do macOS esse método existe, retorna sem erro e **não grava arquivo nenhum** — por
+isso o resultado é conferido no disco antes de ser aceito, e a fila de render entra
+como contorno quando não colar. A resposta diz qual caminho foi usado.
+
+### `measure_image` tira o palpite do caminho
+
+Na primeira reconstrução real o modelo escreveu um decodificador de PNG do zero, no
+meio da tarefa, e gastou com isso a maior parte de dezessete minutos — porque
+precisava da cor exata de cada área e do raio de cada canto, e não tinha como medir.
+
+Agora tem. Numa chamada ele amostra cores, mede formas e varre linhas atrás de bordas.
+Duas respostas importam mais que os números:
+
+`uniformity` diz o quanto a amostra é confiável. Perto de 1 caiu em área chapada;
+abaixo de 0.8 caiu numa borda suavizada, e aquele hex não é uma cor do design — é
+mistura de duas.
+
+Os quatro cantos vêm medidos **separados**. Foi assim que apareceu um card cujo canto
+superior direito tinha raio de 172px contra 114px do esquerdo: o contorno fora
+desenhado à mão. Quem assume um retângulo uniforme erra na silhueta, que é o primeiro
+lugar onde o olho compara.
 
 ---
 
