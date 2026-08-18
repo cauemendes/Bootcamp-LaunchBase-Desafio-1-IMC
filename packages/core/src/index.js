@@ -29,6 +29,14 @@ export { PngError, decodePng } from "./png.js";
 export { DEFAULT_TOLERANCE, measureRegion, sampleColor, scanLine } from "./measure.js";
 
 export {
+  AnimError,
+  DEFAULT_EASE,
+  EASINGS,
+  PRESETS,
+  resolveAnimation,
+} from "./anim.js";
+
+export {
   DEFAULT_FALLBACK_FONT,
   DEFAULT_SNAP_TOLERANCE,
   applyBrand,

@@ -21,6 +21,7 @@
 //@include "ae-text.jsx"
 //@include "ae-read.jsx"
 //@include "ae-frame.jsx"
+//@include "ae-anim.jsx"
 //@include "build-scene.jsx"
 
 /*global app, File, Folder, CompItem*/
@@ -118,6 +119,14 @@ vec.tools.build_scene = function (args) {
   args = args || {};
   if (!args.scene) throw new Error("build_scene precisa de um SceneSpec normalizado em `scene`.");
   return vecBuildScene(args.scene, args.options || {});
+};
+
+vec.tools.animate = function (args) {
+  args = args || {};
+  if (!args.tracks || !(args.tracks instanceof Array)) {
+    throw new Error("animate precisa de `tracks` — trilhas já resolvidas pelo core.");
+  }
+  return vec.applyAnimation(args.tracks, args.options || {});
 };
 
 // ---------------------------------------------------------------- escape hatch

@@ -11,7 +11,7 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Doze ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Quatorze ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
@@ -22,17 +22,20 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import {
+  AnimError,
   applyBrand,
   brandSummary,
   decodePng,
   measureRegion,
   normalizeScene,
+  resolveAnimation,
   sampleColor,
   scanLine,
   validateScene,
 } from "@vectorize-ae/core";
 import { Bridge, BridgeError } from "./bridge.js";
 import { BrandStore } from "./brand-store.js";
+import { ANIM_FORMAT_GUIDE } from "./anim-guide.js";
 import { SCENE_FORMAT_GUIDE } from "./scene-guide.js";
 
 /**
@@ -535,6 +538,79 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         avisos: avisos.length ? avisos : undefined,
         proximoPasso:
           "Chame save_frame para ver o resultado antes de considerar a tarefa concluída.",
+      });
+    }
+  );
+
+  // ---------------------------------------------------------------- animação
+
+  server.registerTool(
+    "describe_animation_format",
+    {
+      title: "Formato do AnimSpec",
+      description:
+        "Explica o formato que animate_layers aceita: presets, easing, stagger, " +
+        "overshoot, e as faixas de duração que funcionam. Leia antes de animar pela " +
+        "primeira vez.",
+      inputSchema: {},
+    },
+    async () => asText(ANIM_FORMAT_GUIDE)
+  );
+
+  server.registerTool(
+    "animate_layers",
+    {
+      title: "Animar camadas com keyframes",
+      description:
+        "Anima camadas que já existem na composição, criando keyframes editáveis com " +
+        "easing temporal do After Effects — não expressões. Recebe um AnimSpec em JSON; " +
+        "chame describe_animation_format primeiro para saber o formato.\n\n" +
+        "Keyframes já existentes na propriedade são substituídos.",
+      inputSchema: {
+        animJson: z
+          .string()
+          .describe("O AnimSpec completo, em JSON. Veja describe_animation_format."),
+        compName: z
+          .string()
+          .optional()
+          .describe("Composição onde as camadas estão. Omitido = a ativa."),
+      },
+    },
+    async ({ animJson, compName }) => {
+      let spec;
+      try {
+        spec = JSON.parse(animJson);
+      } catch (err) {
+        return asError(`animJson não é JSON válido: ${err.message}`);
+      }
+
+      // Resolver aqui, antes de tocar no After Effects: um preset escrito errado vira
+      // uma mensagem dizendo qual e quais existem, em vez de camadas paradas na comp.
+      let resolvido;
+      try {
+        resolvido = resolveAnimation(spec);
+      } catch (err) {
+        if (err instanceof AnimError) return asError(err.message);
+        throw err;
+      }
+
+      const { result } = await call(
+        "animate",
+        { tracks: resolvido.tracks, options: { compName } },
+        { timeoutMs: 120_000 }
+      );
+
+      const avisos = [...resolvido.warnings, ...(result.warnings ?? [])];
+
+      return asText({
+        ok: result.ok,
+        comp: result.compName,
+        trilhas: result.applied,
+        keyframes: result.keyframes,
+        avisos: avisos.length ? avisos : undefined,
+        proximoPasso:
+          "Chame save_frame em dois ou três instantes diferentes e olhe — nenhuma " +
+          "chamada ter dado erro não é a mesma coisa que o timing ter ficado bom.",
       });
     }
   );

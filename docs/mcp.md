@@ -104,6 +104,8 @@ e a lista de comps, está tudo ligado.
 | `set_brand` | Registra a identidade do cliente, ou troca de perfil |
 | `describe_scene_format` | Explica o formato do SceneSpec |
 | `build_scene` | Constrói camadas vetoriais a partir de um SceneSpec |
+| `describe_animation_format` | Explica o formato do AnimSpec |
+| `animate_layers` | Anima camadas com keyframes editáveis |
 | `execute_script` | ExtendScript arbitrário — o escape hatch |
 
 ### A marca entra antes, não depois
@@ -131,7 +133,7 @@ as cores vêm da imagem e o texto sai em Arial.
 
 ### Sobre o tamanho do conjunto
 
-São doze, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+São quatorze, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
@@ -147,6 +149,29 @@ Tenta primeiro `comp.saveFrameToPng()`, que é o caminho nativo. No After Effect
 do macOS esse método existe, retorna sem erro e **não grava arquivo nenhum** — por
 isso o resultado é conferido no disco antes de ser aceito, e a fila de render entra
 como contorno quando não colar. A resposta diz qual caminho foi usado.
+
+### Animação sai como keyframe, não como expressão
+
+Expressão é mais curta de escrever e péssima de receber. O designer abre o arquivo,
+quer atrasar uma entrada em dois frames, e encontra código no lugar de keyframe — para
+ajustar precisa ler, entender e reescrever. Keyframe se arrasta.
+
+Este projeto existe para entregar arquivo editável, então `animate_layers` escreve
+keyframes de verdade, com o easing temporal do After Effects.
+
+O AnimSpec fala em **frames**, não em segundos. É como um motion designer conta, e
+evita a praga do keyframe fora da grade — um valor em segundos que não cai exatamente
+num frame produz keyframe entre frames, difícil de selecionar na timeline e que faz a
+animação parecer trêmula sem motivo aparente.
+
+As faixas de timing da skill de motion graphics viraram validação: duração de entrada
+acima de 1s recebe aviso de que arrasta, abaixo de 3 frames de que o easing não vai
+ser percebido, overshoot acima de 20% de que virou cartoon. Aviso, não erro — a
+decisão continua sua.
+
+E o stagger segue a **ordem da lista**, não o índice da camada na timeline. Escalonar
+por índice dá resultado aleatório e parece erro; a ordem de leitura do design é uma
+decisão de quem monta o spec.
 
 ### `measure_image` tira o palpite do caminho
 
