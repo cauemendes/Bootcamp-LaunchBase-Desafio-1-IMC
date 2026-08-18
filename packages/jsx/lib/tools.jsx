@@ -97,9 +97,14 @@ vec.tools.save_frame = function (args) {
     );
   }
 
+  // `Folder.temp` no macOS cai em `.../T/TemporaryItems`, e a fila de render do AE
+  // não entrega arquivo ali. A pasta da ponte é território comprovado.
+  var pasta = vec.framesFolder();
+  vec.pruneFrames(pasta);
+
   var destino = args.path
     ? new File(args.path)
-    : new File(Folder.temp.fsName + "/vectorize-ae-frame-" + new Date().getTime() + ".png");
+    : new File(pasta.fsName + "/frame-" + new Date().getTime() + ".png");
 
   var saida = vec.saveFrame(comp, time, destino);
 

@@ -46,6 +46,15 @@ export const EASINGS = {
 
 export const DEFAULT_EASE = "snap";
 
+/**
+ * Duração padrão de uma entrada, em frames.
+ *
+ * Dez, não uma fração do fps. Calibrado por quem usa: dá 0,42s a 24fps e 0,33s a
+ * 30fps, ambos dentro da faixa que funciona, e é um número redondo de arrastar na
+ * timeline quando o designer quiser mais rápido ou mais lento.
+ */
+export const DEFAULT_DURATION_FRAMES = 10;
+
 /** Presets, na linguagem do que a animação faz — não da propriedade que ela mexe. */
 export const PRESETS = [
   "fadeIn", "fadeOut",
@@ -53,6 +62,9 @@ export const PRESETS = [
   "popIn", "popOut",
   "rotateIn",
   "drawOn",
+  "dropIn",
+  "spin",
+  "swing",
 ];
 
 const DIRECOES = {
@@ -126,7 +138,7 @@ export function resolveAnimation(spec) {
     // por índice dá resultado aleatório e parece erro; a ordem de leitura do design é
     // uma decisão de quem monta o spec.
     const inicio = Math.round(numero(alvo.startFrame, 0) + i * stagger);
-    const duracao = Math.round(numero(alvo.durationFrames, Math.round(fps * 0.4)));
+    const duracao = Math.round(numero(alvo.durationFrames, DEFAULT_DURATION_FRAMES));
 
     if (duracao < 1) throw new AnimError(`${onde}.durationFrames precisa ser >= 1.`);
 
@@ -250,6 +262,74 @@ function expandir(preset, alvo, ctx) {
     case "rotateIn": {
       const graus = numero(alvo.degrees, -15);
       return [mover("rotation", "offset", [graus], [0])];
+    }
+
+    case "dropIn": {
+      // Cai e quica. O impacto é o ponto dramático, então ele acontece em 65% da
+      // duração — o resto é o quique e o assentamento. Distribuir igualmente faria a
+      // queda parecer flutuante, que é o oposto de peso.
+      const altura = numero(alvo.distance, 200);
+      const quique = numero(alvo.bounce, 18);
+      const alturaQuique = -(altura * (quique / 100));
+
+      const impacto = Math.max(1, Math.round(duracao * 0.65));
+      const pico = Math.max(impacto + 1, Math.round(duracao * 0.82));
+
+      const keys = [
+        // Acelera na queda: influência baixa saindo, para ganhar velocidade.
+        { frame: inicio, value: [0, -altura], easeOut: 0.1, easeIn: 0.1 },
+        // Chega batendo. Ease alto na entrada aqui suavizaria o impacto, que é
+        // justamente o que não se quer numa queda.
+        { frame: inicio + impacto, value: [0, 0], easeOut: 0.1, easeIn: 0.1 },
+      ];
+
+      if (quique > 0 && pico < duracao) {
+        keys.push({ frame: inicio + pico, value: [0, alturaQuique], easeOut: 70, easeIn: 70 });
+        keys.push({ frame: fim, value: [0, 0], easeOut: 0.1, easeIn: 75 });
+      } else {
+        keys[keys.length - 1].frame = fim;
+      }
+
+      return [{ property: "position", mode: "offset", keys }];
+    }
+
+    case "spin": {
+      // Rotação contínua é o único caso em que linear é a escolha certa: qualquer
+      // easing cria um começo e um fim perceptíveis, e um ponteiro de relógio ou uma
+      // engrenagem não deve ter nenhum dos dois.
+      const voltas = numero(alvo.turns, 1);
+      const graus = numero(alvo.degrees, voltas * 360);
+
+      return [
+        {
+          property: "rotation",
+          mode: "offset",
+          keys: [
+            { frame: inicio, value: [0], easeOut: 0.1, easeIn: 0.1 },
+            { frame: fim, value: [graus], easeOut: 0.1, easeIn: 0.1 },
+          ],
+        },
+      ];
+    }
+
+    case "swing": {
+      // Vai e volta: gira até o ângulo e retorna ao ponto de partida. Serve para um
+      // seletor que avança e recua, e para qualquer coisa que precise indicar
+      // movimento sem sair do lugar.
+      const graus = numero(alvo.degrees, 15);
+      const meio = inicio + Math.max(1, Math.round(duracao / 2));
+
+      return [
+        {
+          property: "rotation",
+          mode: "offset",
+          keys: [
+            { frame: inicio, value: [0], easeOut: e.out, easeIn: e.in },
+            { frame: meio, value: [graus], easeOut: e.in, easeIn: e.in },
+            { frame: fim, value: [0], easeOut: e.in, easeIn: e.in },
+          ],
+        },
+      ];
     }
 
     case "drawOn": {

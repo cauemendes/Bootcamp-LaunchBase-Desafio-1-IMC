@@ -267,6 +267,16 @@ Consequência de projeto: o padrão `.tmp` + `rename` para escrita atômica **n�
 confiável em subpasta**. Quem lê precisa tratar JSON incompleto como "ainda não
 chegou" e tentar de novo, em vez de estourar.
 
+## Não renderize para `Folder.temp` no macOS
+
+`Folder.temp` resolve para `/private/var/folders/…/T/TemporaryItems`, uma pasta
+especial do sistema. A fila de render do After Effects **roda sem erro e não deixa
+arquivo ali** — o sintoma é "a fila rodou mas não encontrei o arquivo gerado", que
+parece problema de render e é problema de destino.
+
+Escreva numa pasta sua. Neste projeto é `Folder.userData/vectorize-ae/bridge/frames`,
+que é território comprovado: a ponte grava ali o tempo todo.
+
 ## `saveFrameToPng` pode existir e não fazer nada (26.3, macOS)
 
 O método está presente, a chamada retorna sem lançar erro, e **nenhum arquivo é

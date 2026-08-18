@@ -30,6 +30,7 @@ export { DEFAULT_TOLERANCE, measureRegion, sampleColor, scanLine } from "./measu
 
 export {
   AnimError,
+  DEFAULT_DURATION_FRAMES,
   DEFAULT_EASE,
   EASINGS,
   PRESETS,

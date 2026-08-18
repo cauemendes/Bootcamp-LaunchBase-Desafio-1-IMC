@@ -1260,9 +1260,61 @@ function round(n, casas) {
  * é desligado antes e restaurado depois, e o item criado aqui é sempre removido.
  */
 
-/*global app, File, Folder, vec, RQItemStatus*/
+/*global app, File, Folder, $, vec, RQItemStatus*/
 
 var vec = vec || {};
+
+/**
+ * Onde os frames renderizados vão.
+ *
+ * NÃO é `Folder.temp`. No macOS ele resolve para `.../T/TemporaryItems`, uma pasta
+ * especial do sistema onde a fila de render do After Effects roda e não entrega
+ * arquivo — o sintoma foi "a fila rodou mas não encontrei o arquivo gerado".
+ *
+ * A pasta da ponte, por outro lado, é território conhecido: é onde o heartbeat e as
+ * respostas são gravados o tempo todo, com sucesso, desde o primeiro dia. Trocar uma
+ * pasta duvidosa por uma comprovada elimina a classe inteira de problema.
+ */
+function vecPastaDeFrames() {
+  var override = $.getenv("VECTORIZE_AE_BRIDGE_DIR");
+  var base = override ? override : Folder.userData.fsName + "/vectorize-ae/bridge";
+  var pasta = new Folder(base + "/frames");
+
+  if (!pasta.exists && !pasta.create()) {
+    throw new Error("Não consegui criar a pasta de frames em " + pasta.fsName + ".");
+  }
+
+  return pasta;
+}
+
+/**
+ * Apaga frames velhos.
+ *
+ * Cada `save_frame` deixa um PNG de tela cheia, e o lado Node lê sem apagar. Uma
+ * sessão de trabalho longa acumularia centenas de megabytes numa pasta que ninguém
+ * olha. Uma hora é folga suficiente: o modelo lê o frame segundos depois de gerá-lo.
+ */
+function vecLimparFramesVelhos(pasta) {
+  try {
+    var limite = new Date().getTime() - 3600 * 1000;
+    var arquivos = pasta.getFiles();
+
+    for (var i = 0; i < arquivos.length; i++) {
+      var f = arquivos[i];
+      if (!(f instanceof File)) continue;
+      if (f.modified && f.modified.getTime() < limite) {
+        try {
+          f.remove();
+        } catch (e) {}
+      }
+    }
+  } catch (e) {
+    // Limpeza é cortesia; falhar aqui não pode impedir a renderização.
+  }
+}
+
+vec.framesFolder = vecPastaDeFrames;
+vec.pruneFrames = vecLimparFramesVelhos;
 
 /** Alinha um tempo ao frame mais próximo — a fila recusa tempo fora da grade. */
 function vecSnapToFrame(comp, time) {
@@ -1994,9 +2046,14 @@ vec.tools.save_frame = function (args) {
     );
   }
 
+  // `Folder.temp` no macOS cai em `.../T/TemporaryItems`, e a fila de render do AE
+  // não entrega arquivo ali. A pasta da ponte é território comprovado.
+  var pasta = vec.framesFolder();
+  vec.pruneFrames(pasta);
+
   var destino = args.path
     ? new File(args.path)
-    : new File(Folder.temp.fsName + "/vectorize-ae-frame-" + new Date().getTime() + ".png");
+    : new File(pasta.fsName + "/frame-" + new Date().getTime() + ".png");
 
   var saida = vec.saveFrame(comp, time, destino);
 

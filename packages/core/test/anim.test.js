@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { AnimError, DEFAULT_EASE, EASINGS, PRESETS, resolveAnimation } from "../src/anim.js";
+import {
+  AnimError,
+  DEFAULT_DURATION_FRAMES,
+  DEFAULT_EASE,
+  EASINGS,
+  PRESETS,
+  resolveAnimation,
+} from "../src/anim.js";
 
 const spec = (targets, extra = {}) => ({ fps: 30, targets, ...extra });
 const um = (targets, extra) => resolveAnimation(spec(targets, extra));
@@ -199,10 +206,93 @@ test("duração dentro da faixa não gera aviso nenhum", () => {
   assert.deepEqual(warnings, []);
 });
 
-test("duração padrão fica na faixa que funciona", () => {
-  const { tracks, warnings } = um([{ layer: "a", preset: "fadeIn" }]);
-  const duracao = tracks[0].keys.at(-1).frame - tracks[0].keys[0].frame;
+test("duração padrão é 10 frames, independente do fps", () => {
+  // Calibrado por quem usa. Dez frames dá 0,42s a 24fps e 0,33s a 30fps, ambos na
+  // faixa que funciona — e é número redondo de arrastar na timeline.
+  for (const fps of [24, 25, 30, 60]) {
+    const { tracks, warnings } = resolveAnimation({ fps, targets: [{ layer: "a", preset: "fadeIn" }] });
+    const duracao = tracks[0].keys.at(-1).frame - tracks[0].keys[0].frame;
 
-  assert.ok(duracao >= 9 && duracao <= 15, `${duracao} frames a 30fps`);
-  assert.deepEqual(warnings, []);
+    assert.equal(duracao, DEFAULT_DURATION_FRAMES, `a ${fps}fps`);
+    assert.deepEqual(warnings, [], `a ${fps}fps`);
+  }
+});
+
+// ---------------------------------------------------------------- queda e rotação
+
+test("dropIn cai de cima, bate, quica e assenta", () => {
+  const { tracks } = um([
+    { layer: "Moeda", preset: "dropIn", distance: 200, bounce: 20, durationFrames: 20 },
+  ]);
+
+  const keys = tracks[0].keys;
+  assert.equal(tracks[0].property, "position");
+  assert.equal(tracks[0].mode, "offset");
+  assert.equal(keys.length, 4, "início, impacto, pico do quique, assentamento");
+
+  assert.deepEqual(keys[0].value, [0, -200], "começa acima: Y cresce para baixo");
+  assert.deepEqual(keys[1].value, [0, 0], "o impacto é na posição final");
+  assert.equal(keys[2].value[1], -40, "quica 20% dos 200px");
+  assert.deepEqual(keys[3].value, [0, 0], "volta e fica");
+});
+
+test("dropIn põe o impacto antes da metade final — queda tem peso", () => {
+  const { tracks } = um([{ layer: "Moeda", preset: "dropIn", durationFrames: 20 }]);
+  const keys = tracks[0].keys;
+
+  const impacto = keys[1].frame;
+  assert.ok(impacto > 10 && impacto < 20, `impacto no frame ${impacto}`);
+  // Distribuir igualmente faria a queda parecer flutuante.
+  assert.ok(keys[2].frame > impacto, "o quique vem depois do impacto");
+});
+
+test("dropIn acelera na queda em vez de desacelerar", () => {
+  const { tracks } = um([{ layer: "a", preset: "dropIn", durationFrames: 20 }]);
+  const keys = tracks[0].keys;
+
+  // Ease alto na chegada suavizaria o impacto, que é o oposto do que uma queda pede.
+  assert.ok(keys[1].easeIn < 10, "chega batendo");
+});
+
+test("dropIn sem quique termina no impacto", () => {
+  const { tracks } = um([{ layer: "a", preset: "dropIn", bounce: 0, durationFrames: 12 }]);
+  const keys = tracks[0].keys;
+
+  assert.equal(keys.length, 2);
+  assert.equal(keys.at(-1).frame, 12);
+  assert.deepEqual(keys.at(-1).value, [0, 0]);
+});
+
+test("spin é linear — easing criaria começo e fim perceptíveis", () => {
+  const { tracks } = um([{ layer: "Ponteiro", preset: "spin", turns: 2, durationFrames: 48 }]);
+  const keys = tracks[0].keys;
+
+  assert.equal(tracks[0].property, "rotation");
+  assert.equal(tracks[0].mode, "offset");
+  assert.deepEqual(keys.map((k) => k.value), [[0], [720]]);
+
+  for (const k of keys) {
+    assert.ok(k.easeIn < 1 && k.easeOut < 1, "rotação contínua não leva easing");
+  }
+});
+
+test("spin aceita graus direto quando não é volta inteira", () => {
+  const { tracks } = um([{ layer: "Ponteiro", preset: "spin", degrees: 90 }]);
+  assert.deepEqual(tracks[0].keys.at(-1).value, [90]);
+});
+
+test("swing vai e volta ao ponto de partida", () => {
+  const { tracks } = um([{ layer: "Seletor", preset: "swing", degrees: 20, durationFrames: 16 }]);
+  const keys = tracks[0].keys;
+
+  assert.equal(keys.length, 3);
+  assert.deepEqual(keys[0].value, [0]);
+  assert.deepEqual(keys[1].value, [20]);
+  assert.deepEqual(keys[2].value, [0], "termina onde começou");
+  assert.equal(keys[1].frame, 8, "o pico fica no meio");
+});
+
+test("swing negativo recua em vez de avançar", () => {
+  const { tracks } = um([{ layer: "Seletor", preset: "swing", degrees: -20 }]);
+  assert.deepEqual(tracks[0].keys[1].value, [-20]);
 });

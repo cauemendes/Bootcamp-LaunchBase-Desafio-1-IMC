@@ -37,11 +37,14 @@ Frame é como um motion designer conta, e evita keyframe fora da grade: um valor
 segundos que não cai exatamente num frame produz keyframe entre frames, difícil de
 selecionar na timeline e que faz a animação parecer trêmula sem motivo aparente.
 
-\`startFrame\` (padrão 0) e \`durationFrames\` (padrão ~0,4s convertido pelo fps).
+\`startFrame\` (padrão 0) e \`durationFrames\` (**padrão 10**).
 
-Faixas que funcionam para **entrada de elemento**: 9 a 15 frames a 30fps, 8 a 12 a
-24fps. Acima de 1 segundo arrasta; abaixo de 3 frames o easing não é percebido e o
-resultado parece um corte. Fora da faixa você recebe aviso, não erro.
+Dez frames é o default calibrado por quem usa a ferramenta: 0,42s a 24fps, 0,33s a
+30fps, e um número redondo de arrastar na timeline quando quiser mais rápido ou mais
+lento. Não mude sem motivo — a decisão de tempo é do designer, e ele ajusta o keyframe.
+
+Acima de 1 segundo arrasta; abaixo de 3 frames o easing não é percebido e o resultado
+parece um corte. Fora da faixa você recebe aviso, não erro.
 
 ## Presets
 
@@ -52,11 +55,27 @@ resultado parece um corte. Fora da faixa você recebe aviso, não erro.
 | \`popIn\` / \`popOut\` | escala | \`fromScale\` |
 | \`rotateIn\` | gira até a rotação atual | \`degrees\` |
 | \`drawOn\` | contorno se desenhando (Trim Paths) | — |
+| \`dropIn\` | cai de cima, bate e quica | \`distance\`, \`bounce\` |
+| \`spin\` | rotação contínua, linear | \`turns\` ou \`degrees\` |
+| \`swing\` | gira até um ângulo e volta | \`degrees\` |
 
 \`direction\` é para onde o elemento **vai**: \`up\`, \`down\`, \`left\`, \`right\`.
 \`"up"\` entra de baixo subindo.
 
 \`drawOn\` só funciona em shape layer, e o Trim Paths é criado se não existir.
+
+\`dropIn\` é para peso: o impacto acontece a 65% da duração e o resto é o quique,
+porque distribuir igualmente faz a queda parecer flutuante. A queda **acelera** — ease
+na chegada suavizaria o impacto, que é o oposto do que uma queda pede. \`bounce\` é a
+altura do quique em % da distância; padrão 18, e 0 desliga.
+
+\`spin\` ignora \`ease\` de propósito: rotação contínua é o único caso em que linear
+é a escolha certa, porque qualquer easing cria um começo e um fim perceptíveis — e um
+ponteiro de relógio não deve ter nenhum dos dois. Use \`turns\` para voltas inteiras
+ou \`degrees\` para um ângulo específico.
+
+\`swing\` volta ao ponto de partida, com o pico no meio. Ângulo negativo recua em vez
+de avançar.
 
 ## Easing
 
