@@ -14,6 +14,7 @@
  *   packages/jsx/lib/ae-frame.jsx
  *   packages/jsx/lib/ae-anim.jsx
  *   packages/jsx/lib/ae-image.jsx
+ *   packages/jsx/lib/ae-sequence.jsx
  *   packages/jsx/lib/build-scene.jsx
  *
  * Edite os originais em packages/jsx/ e rode a instalação de novo.
@@ -299,7 +300,7 @@ vec.addGroup = function (contents, groupSpec, opts) {
     }
   }
 
-  var nome = vec.safeName(groupSpec.name, "Grupo");
+  var nome = vec.safeName(groupSpec.name, "Group");
   group.name = cores.length ? nome + " · " + cores.join(" / ") : nome;
 
   return group;
@@ -836,7 +837,7 @@ vec.addTextLayer = function (comp, spec, opts) {
   var gamma = opts && opts.gamma ? opts.gamma : 1;
 
   var layer = comp.layers.addText(spec.content);
-  layer.name = vec.safeName(spec.name, "Texto");
+  layer.name = vec.safeName(spec.name, "Text");
 
   var textProp = layer.property("ADBE Text Properties").property("ADBE Text Document");
 
@@ -1859,7 +1860,7 @@ vec.applyAnimation = function (tracks, options) {
   var aplicadas = 0;
   var keyframes = 0;
 
-  app.beginUndoGroup("Vectorize AE — animação");
+  app.beginUndoGroup("Vectorize AE - animation");
 
   try {
     for (var i = 0; i < tracks.length; i++) {
@@ -1980,17 +1981,17 @@ vec.addImageLayer = function (comp, spec, opts) {
     if (!arquivo.exists) {
       // Caminho errado não pode virar camada silenciosamente ausente: cai para
       // placeholder e o aviso diz o caminho que faltou.
-      aviso = 'Arquivo não encontrado para "' + spec.name + '": ' + arquivo.fsName +
-        " — entrou como placeholder.";
+      aviso = 'File not found for "' + spec.name + '": ' + arquivo.fsName +
+        " - added as a placeholder instead.";
       return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
     }
 
     var item = vecImportar(arquivo);
     var layer = comp.layers.add(item);
 
-    layer.name = vec.safeName(spec.name, "Imagem");
+    layer.name = vec.safeName(spec.name, "Image");
     layer.label = vec.LABEL.asset;
-    layer.comment = "Colocado por Vectorize AE · confira o enquadramento";
+    layer.comment = "Placed by Vectorize AE - check the framing";
 
     var t = layer.property("ADBE Transform Group");
     var escala = vecEscalaParaCaixa(
@@ -2011,7 +2012,7 @@ vec.addImageLayer = function (comp, spec, opts) {
     return { layer: layer, warning: null };
   }
 
-  aviso = 'PLACEHOLDER: "' + spec.name + '" precisa de uma imagem real' +
+  aviso = 'PLACEHOLDER: "' + spec.name + '" needs a real image' +
     (spec.label ? " (" + spec.label + ")" : "") + ".";
 
   return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
@@ -2027,13 +2028,13 @@ vec.addImageLayer = function (comp, spec, opts) {
 function vecPlaceholder(comp, spec, descricao) {
   var layer = comp.layers.addShape();
 
-  layer.name = "[IMAGEM] " + vec.safeName(spec.name, "Imagem");
+  layer.name = "[IMAGE] " + vec.safeName(spec.name, "Image");
   layer.label = vec.LABEL.placeholder;
-  layer.comment = descricao + " Troque esta camada pela imagem e apague o placeholder.";
+  layer.comment = descricao + " Replace this layer with the real image and delete the placeholder.";
 
   var contents = layer.property("ADBE Root Vectors Group");
   var group = contents.addProperty("ADBE Vector Group");
-  group.name = spec.label ? vec.safeName(spec.label, "Conteúdo") : "Área da imagem";
+  group.name = spec.label ? vec.safeName(spec.label, "Content") : "Image area";
 
   var inner = group.property("ADBE Vectors Group");
 
@@ -2061,6 +2062,193 @@ function vecPlaceholder(comp, spec, descricao) {
 
   return layer;
 }
+
+// ── ae-sequence.jsx ──
+/**
+ * Comp master: as cenas montadas numa timeline, com áudio e marcadores.
+ *
+ * ── O que isto entrega ────────────────────────────────────────────────────────
+ * Um projeto onde o designer abre a comp master e já vê a estrutura do vídeo: cada
+ * cena no seu tempo, o áudio embaixo, marcadores nomeando os momentos. O trabalho que
+ * sobra é o que só ele sabe fazer — acertar o ritmo ouvindo, polir as entradas.
+ *
+ * O que isto NÃO tenta fazer é adivinhar o ritmo. As durações vêm do plano calculado
+ * no core (roteiro, duração declarada, ou áudio), e ficam explicitamente sujeitas a
+ * ajuste. Uma ferramenta que finge acertar o timing na primeira faz o designer
+ * desconfiar de tudo.
+ */
+
+/*global app, File, ImportOptions, CompItem, MarkerValue, KeyframeInterpolationType, vec*/
+
+var vec = vec || {};
+
+/** A comp da cena, pelo nome. `null` quando não existe — quem chama decide o que fazer. */
+function vecAcharComp(nome) {
+  for (var i = 1; i <= app.project.numItems; i++) {
+    var item = app.project.item(i);
+    if (item instanceof CompItem && item.name === nome) return item;
+  }
+  return null;
+}
+
+/** Importa o áudio, reaproveitando o item se já estiver no projeto. */
+function vecImportarAudio(caminho) {
+  var arquivo = new File(caminho);
+  if (!arquivo.exists) return null;
+
+  for (var i = 1; i <= app.project.numItems; i++) {
+    var item = app.project.item(i);
+    try {
+      if (item.mainSource && item.mainSource.file && item.mainSource.file.fsName === arquivo.fsName) {
+        return item;
+      }
+    } catch (e) {}
+  }
+
+  return app.project.importFile(new ImportOptions(arquivo));
+}
+
+/**
+ * Crossfade na entrada da cena.
+ *
+ * Só na entrada, e não na saída da anterior: as camadas se sobrepõem, então a de cima
+ * aparecendo já revela a de baixo sumindo. Animar as duas dobraria o trabalho e
+ * produziria um vale escuro no meio da transição, onde as duas estariam
+ * semitransparentes ao mesmo tempo.
+ */
+function vecCrossfade(layer, inicioSegundos, duracaoSegundos) {
+  var opacidade = layer.property("ADBE Transform Group").property("ADBE Opacity");
+
+  opacidade.setValueAtTime(inicioSegundos, 0);
+  opacidade.setValueAtTime(inicioSegundos + duracaoSegundos, 100);
+
+  for (var i = 1; i <= opacidade.numKeys; i++) {
+    try {
+      opacidade.setInterpolationTypeAtKey(
+        i,
+        KeyframeInterpolationType.BEZIER,
+        KeyframeInterpolationType.BEZIER
+      );
+    } catch (e) {}
+  }
+}
+
+/**
+ * Monta a comp master.
+ *
+ * @param {Object} plan     { name, width, height, frameRate, totalFrames, audio, scenes }
+ * @returns {Object} relatório com avisos
+ */
+vec.buildSequence = function (plan, options) {
+  options = options || {};
+
+  var avisos = [];
+  var fps = plan.frameRate;
+  var nome = vec.safeName(plan.name, "Master");
+
+  app.beginUndoGroup("Vectorize AE - " + nome);
+
+  try {
+    var existente = vecAcharComp(nome);
+
+    if (existente && !options.replace) {
+      throw new Error(
+        'Já existe uma composição chamada "' + nome + '". Use outro nome, ou passe ' +
+          "`replace` para substituir — substituir apaga o que estiver nela."
+      );
+    }
+
+    if (existente) existente.remove();
+
+    var master = app.project.items.addComp(
+      nome,
+      plan.width,
+      plan.height,
+      1,
+      plan.totalFrames / fps,
+      fps
+    );
+
+    // O áudio entra primeiro para ficar no fundo da pilha: é o lugar em que um motion
+    // designer espera encontrá-lo, e onde ele não atrapalha a leitura das cenas.
+    if (plan.audio) {
+      var itemAudio = vecImportarAudio(plan.audio);
+
+      if (itemAudio === null) {
+        avisos.push("Áudio não encontrado: " + plan.audio + " — a comp foi montada sem ele.");
+      } else {
+        var camadaAudio = master.layers.add(itemAudio);
+        camadaAudio.startTime = 0;
+        camadaAudio.name = "VO / Audio";
+        camadaAudio.label = 16;
+
+        if (itemAudio.duration > master.duration + 1 / fps) {
+          avisos.push(
+            "O áudio dura " + Math.round(itemAudio.duration * 10) / 10 + "s e a comp tem " +
+              Math.round(master.duration * 10) / 10 + "s — parte do áudio fica fora."
+          );
+        }
+      }
+    }
+
+    // Em ordem: cada camada nova entra no índice 1, então a última cena termina no
+    // topo. É o que faz o crossfade funcionar — a que entra aparece SOBRE a que sai.
+    var colocadas = 0;
+
+    for (var i = 0; i < plan.scenes.length; i++) {
+      var cena = plan.scenes[i];
+      var compCena = vecAcharComp(cena.comp);
+
+      if (compCena === null) {
+        avisos.push('Composição não encontrada: "' + cena.comp + '" — cena pulada.');
+        continue;
+      }
+
+      var layer = master.layers.add(compCena);
+      var inicio = cena.startFrame / fps;
+
+      // `startTime` desloca o conteúdo; `inPoint`/`outPoint` recortam. Os três juntos
+      // fazem a cena começar do frame 0 dela no instante certo da master.
+      layer.startTime = inicio;
+      layer.inPoint = inicio;
+      layer.outPoint = inicio + cena.durationFrames / fps;
+
+      if (cena.transitionFrames > 0 && i > 0) {
+        vecCrossfade(layer, inicio, cena.transitionFrames / fps);
+      }
+
+      // Marcador na comp, não na camada: é o que aparece na régua de tempo e permite
+      // navegar o vídeo inteiro sem selecionar nada.
+      try {
+        master.markerProperty.setValueAtTime(inicio, new MarkerValue(cena.marker));
+      } catch (e) {
+        avisos.push("Não consegui criar o marcador de " + cena.comp + ": " + vec.describeError(e));
+      }
+
+      colocadas++;
+    }
+
+    if (colocadas === 0) {
+      throw new Error(
+        "Nenhuma das composições de cena foi encontrada no projeto. " +
+          "Construa as cenas antes de montar a master."
+      );
+    }
+
+    master.openInViewer();
+
+    return {
+      ok: true,
+      compName: master.name,
+      scenes: colocadas,
+      durationFrames: plan.totalFrames,
+      durationSeconds: Math.round((plan.totalFrames / fps) * 100) / 100,
+      warnings: avisos,
+    };
+  } finally {
+    app.endUndoGroup();
+  }
+};
 
 // ── build-scene.jsx ──
 /**
@@ -2129,11 +2317,11 @@ function vecBuildScene(scene, options) {
     return { ok: false, error: "A cena não tem nenhuma camada para construir." };
   }
 
-  var compName = vec.safeName(options.compName, "Cena Vetorizada");
+  var compName = vec.safeName(options.compName, "Vectorized Scene");
 
   // Um único grupo de undo para a cena inteira: o usuário desfaz com um Ctrl+Z, e
   // não com um por camada.
-  app.beginUndoGroup("Vectorize AE — " + compName);
+  app.beginUndoGroup("Vectorize AE - " + compName);
 
   try {
     var comp = vecResolveComp(scene.canvas, compName, options);
@@ -2428,6 +2616,12 @@ vec.tools.save_project = function (args) {
   };
 };
 
+vec.tools.build_sequence = function (args) {
+  args = args || {};
+  if (!args.plan) throw new Error("build_sequence precisa de um plano resolvido em `plan`.");
+  return vec.buildSequence(args.plan, args.options || {});
+};
+
 vec.tools.animate = function (args) {
   args = args || {};
   if (!args.tracks || !(args.tracks instanceof Array)) {
@@ -2455,7 +2649,7 @@ vec.tools.execute_script = function (args) {
     throw new Error("execute_script precisa de `code`.");
   }
 
-  var rotulo = args.label || "Vectorize AE — script";
+  var rotulo = args.label || "Vectorize AE - script";
   app.beginUndoGroup(rotulo);
 
   try {

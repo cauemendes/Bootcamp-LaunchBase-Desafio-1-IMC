@@ -106,6 +106,7 @@ e a lista de comps, está tudo ligado.
 | `build_scene` | Constrói camadas vetoriais a partir de um SceneSpec |
 | `describe_animation_format` | Explica o formato do AnimSpec |
 | `animate_layers` | Anima camadas com keyframes editáveis |
+| `build_master_comp` | Sequencia as cenas numa comp master, com áudio e marcadores |
 | `save_project` | Grava o .aep — nada do que foi criado está em disco antes disso |
 | `execute_script` | ExtendScript arbitrário — o escape hatch |
 
@@ -134,7 +135,7 @@ as cores vêm da imagem e o texto sai em Arial.
 
 ### Sobre o tamanho do conjunto
 
-São quinze, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+São dezesseis, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
@@ -173,6 +174,26 @@ decisão continua sua.
 E o stagger segue a **ordem da lista**, não o índice da camada na timeline. Escalonar
 por índice dá resultado aleatório e parece erro; a ordem de leitura do design é uma
 decisão de quem monta o spec.
+
+### Da cena para o vídeo
+
+Reconstruir e animar resolve um quadro. Um vídeo é uma sequência deles com tempo, e
+montar isso à mão — arrastar dez comps, acertar entradas, conferir contra a locução — é
+trabalho mecânico que consome a atenção que deveria ir para o polimento.
+
+`build_master_comp` monta: cada cena no seu tempo, o áudio no fundo da pilha,
+marcadores nomeando os momentos na régua. Havendo transição, a cena entra **antes** da
+anterior acabar — sem essa sobreposição o crossfade aconteceria sobre o nada e
+apareceria um piscar de fundo entre as cenas.
+
+A duração de cada cena vem, nesta ordem: `durationFrames` declarado, estimativa pelo
+`script` da cena (150 palavras por minuto, mais um respiro), ou o padrão. **A estimativa
+não pretende ser exata** — ela põe as cenas perto do lugar certo para você ajustar
+ouvindo, que é como esse trabalho é feito de verdade. Uma ferramenta que finge acertar o
+timing de primeira faz o designer desconfiar de tudo.
+
+Com `fitToAudio`, tudo é esticado proporcionalmente para casar com a locução, mantendo
+o ritmo relativo que você definiu.
 
 ### O que não é vetor entra marcado
 

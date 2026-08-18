@@ -29,7 +29,7 @@ vec.addTextLayer = function (comp, spec, opts) {
   var gamma = opts && opts.gamma ? opts.gamma : 1;
 
   var layer = comp.layers.addText(spec.content);
-  layer.name = vec.safeName(spec.name, "Texto");
+  layer.name = vec.safeName(spec.name, "Text");
 
   var textProp = layer.property("ADBE Text Properties").property("ADBE Text Document");
 

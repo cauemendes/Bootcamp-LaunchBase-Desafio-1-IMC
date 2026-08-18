@@ -11,7 +11,7 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Quinze ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Dezesseis ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
@@ -27,7 +27,9 @@ import {
   brandSummary,
   decodePng,
   measureRegion,
+  SequenceError,
   normalizeScene,
+  planSequence,
   resolveAnimation,
   sampleColor,
   scanLine,
@@ -682,6 +684,124 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           "Chame save_frame em dois ou três instantes diferentes e olhe — nenhuma " +
           "chamada ter dado erro não é a mesma coisa que o timing ter ficado bom. " +
           "Os keyframes existem só na memória do After Effects até save_project rodar.",
+      });
+    }
+  );
+
+  // ---------------------------------------------------------------- montagem
+
+  server.registerTool(
+    "build_master_comp",
+    {
+      title: "Montar a comp master",
+      description:
+        "Sequencia composições de cena numa comp master, com áudio e marcadores. É o " +
+        "passo que transforma cenas soltas num vídeo: cada cena no seu tempo, a locução " +
+        "embaixo, marcadores nomeando os momentos na régua.\n\n" +
+        "As cenas precisam existir antes — construa cada uma com build_scene, depois " +
+        "monte.\n\n" +
+        "A duração de cada cena vem, nesta ordem: `durationFrames` declarado, estimativa " +
+        "pelo `script` da cena, ou o padrão. A estimativa por texto não pretende ser " +
+        "exata: ela põe as cenas perto do lugar certo para o designer ajustar ouvindo o " +
+        "áudio, que é como esse trabalho é feito de verdade.\n\n" +
+        "Nomeie comps e marcadores em INGLÊS.",
+      inputSchema: {
+        name: z.string().describe('Nome da comp master, em inglês. Ex.: "Master - Bid Adjustments".'),
+        width: z.number().int().optional().describe("Largura. Padrão 1920."),
+        height: z.number().int().optional().describe("Altura. Padrão 1080."),
+        frameRate: z.number().optional().describe("Frame rate. Padrão 30."),
+        audio: z
+          .string()
+          .optional()
+          .describe("Caminho do arquivo de locução ou trilha. Entra no fundo da pilha."),
+        audioDurationFrames: z
+          .number()
+          .int()
+          .optional()
+          .describe(
+            "Duração do áudio em frames, se você já souber. Serve para avisar quando as " +
+              "cenas não cobrem o áudio."
+          ),
+        fitToAudio: z
+          .boolean()
+          .optional()
+          .describe(
+            "Esticar ou encolher todas as cenas proporcionalmente para casar com o áudio. " +
+              "Mantém o ritmo relativo entre elas."
+          ),
+        defaultDurationFrames: z
+          .number()
+          .int()
+          .optional()
+          .describe("Duração de cena sem texto e sem duração declarada. Padrão 90."),
+        wordsPerMinute: z
+          .number()
+          .optional()
+          .describe("Velocidade da locução para estimar por texto. Padrão 150."),
+        scenes: z
+          .array(
+            z.object({
+              comp: z.string().describe("Nome da composição da cena, que já deve existir."),
+              durationFrames: z.number().int().optional(),
+              script: z
+                .string()
+                .optional()
+                .describe("O que é falado nesta cena. Vira estimativa de duração."),
+              transitionFrames: z
+                .number()
+                .int()
+                .optional()
+                .describe("Crossfade na entrada desta cena. 0 = corte seco."),
+              marker: z.string().optional().describe("Nome do marcador. Omitido = nome da comp."),
+            })
+          )
+          .describe("As cenas, na ordem em que aparecem."),
+        replace: z
+          .boolean()
+          .optional()
+          .describe("Substituir a master se já existir. DESTRUTIVO — pergunte antes."),
+      },
+    },
+    async ({ name, width, height, frameRate, audio, replace, ...spec }) => {
+      const fps = frameRate ?? 30;
+
+      let plano;
+      try {
+        plano = planSequence({ ...spec, fps });
+      } catch (err) {
+        if (err instanceof SequenceError) return asError(err.message);
+        throw err;
+      }
+
+      const { result } = await call(
+        "build_sequence",
+        {
+          plan: {
+            name,
+            width: width ?? 1920,
+            height: height ?? 1080,
+            frameRate: fps,
+            totalFrames: plano.totalFrames,
+            audio,
+            scenes: plano.scenes,
+          },
+          options: { replace },
+        },
+        { timeoutMs: 120_000 }
+      );
+
+      const avisos = [...plano.warnings, ...(result.warnings ?? [])];
+
+      return asText({
+        ok: result.ok,
+        comp: result.compName,
+        cenas: result.scenes,
+        duracao: `${result.durationSeconds}s (${result.durationFrames} frames)`,
+        origemDasDuracoes: plano.scenes.map((s) => `${s.comp}: ${s.durationSource}`),
+        avisos: avisos.length ? avisos : undefined,
+        proximoPasso:
+          "Abra a master e ouça. As durações estimadas põem as cenas perto do lugar " +
+          "certo, não no lugar exato — o ajuste fino é ouvindo.",
       });
     }
   );

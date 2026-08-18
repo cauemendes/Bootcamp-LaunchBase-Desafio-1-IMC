@@ -198,7 +198,7 @@ vec.applyAnimation = function (tracks, options) {
   var aplicadas = 0;
   var keyframes = 0;
 
-  app.beginUndoGroup("Vectorize AE — animação");
+  app.beginUndoGroup("Vectorize AE - animation");
 
   try {
     for (var i = 0; i < tracks.length; i++) {

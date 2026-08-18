@@ -23,6 +23,7 @@
 //@include "ae-frame.jsx"
 //@include "ae-anim.jsx"
 //@include "ae-image.jsx"
+//@include "ae-sequence.jsx"
 //@include "build-scene.jsx"
 
 /*global app, File, Folder, CompItem*/
@@ -182,6 +183,12 @@ vec.tools.save_project = function (args) {
   };
 };
 
+vec.tools.build_sequence = function (args) {
+  args = args || {};
+  if (!args.plan) throw new Error("build_sequence precisa de um plano resolvido em `plan`.");
+  return vec.buildSequence(args.plan, args.options || {});
+};
+
 vec.tools.animate = function (args) {
   args = args || {};
   if (!args.tracks || !(args.tracks instanceof Array)) {
@@ -209,7 +216,7 @@ vec.tools.execute_script = function (args) {
     throw new Error("execute_script precisa de `code`.");
   }
 
-  var rotulo = args.label || "Vectorize AE — script";
+  var rotulo = args.label || "Vectorize AE - script";
   app.beginUndoGroup(rotulo);
 
   try {

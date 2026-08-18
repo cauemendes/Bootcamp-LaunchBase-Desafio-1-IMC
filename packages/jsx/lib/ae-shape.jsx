@@ -86,7 +86,7 @@ vec.addGroup = function (contents, groupSpec, opts) {
     }
   }
 
-  var nome = vec.safeName(groupSpec.name, "Grupo");
+  var nome = vec.safeName(groupSpec.name, "Group");
   group.name = cores.length ? nome + " · " + cores.join(" / ") : nome;
 
   return group;

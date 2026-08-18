@@ -80,17 +80,17 @@ vec.addImageLayer = function (comp, spec, opts) {
     if (!arquivo.exists) {
       // Caminho errado não pode virar camada silenciosamente ausente: cai para
       // placeholder e o aviso diz o caminho que faltou.
-      aviso = 'Arquivo não encontrado para "' + spec.name + '": ' + arquivo.fsName +
-        " — entrou como placeholder.";
+      aviso = 'File not found for "' + spec.name + '": ' + arquivo.fsName +
+        " - added as a placeholder instead.";
       return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
     }
 
     var item = vecImportar(arquivo);
     var layer = comp.layers.add(item);
 
-    layer.name = vec.safeName(spec.name, "Imagem");
+    layer.name = vec.safeName(spec.name, "Image");
     layer.label = vec.LABEL.asset;
-    layer.comment = "Colocado por Vectorize AE · confira o enquadramento";
+    layer.comment = "Placed by Vectorize AE - check the framing";
 
     var t = layer.property("ADBE Transform Group");
     var escala = vecEscalaParaCaixa(
@@ -111,7 +111,7 @@ vec.addImageLayer = function (comp, spec, opts) {
     return { layer: layer, warning: null };
   }
 
-  aviso = 'PLACEHOLDER: "' + spec.name + '" precisa de uma imagem real' +
+  aviso = 'PLACEHOLDER: "' + spec.name + '" needs a real image' +
     (spec.label ? " (" + spec.label + ")" : "") + ".";
 
   return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
@@ -127,13 +127,13 @@ vec.addImageLayer = function (comp, spec, opts) {
 function vecPlaceholder(comp, spec, descricao) {
   var layer = comp.layers.addShape();
 
-  layer.name = "[IMAGEM] " + vec.safeName(spec.name, "Imagem");
+  layer.name = "[IMAGE] " + vec.safeName(spec.name, "Image");
   layer.label = vec.LABEL.placeholder;
-  layer.comment = descricao + " Troque esta camada pela imagem e apague o placeholder.";
+  layer.comment = descricao + " Replace this layer with the real image and delete the placeholder.";
 
   var contents = layer.property("ADBE Root Vectors Group");
   var group = contents.addProperty("ADBE Vector Group");
-  group.name = spec.label ? vec.safeName(spec.label, "Conteúdo") : "Área da imagem";
+  group.name = spec.label ? vec.safeName(spec.label, "Content") : "Image area";
 
   var inner = group.property("ADBE Vectors Group");
 

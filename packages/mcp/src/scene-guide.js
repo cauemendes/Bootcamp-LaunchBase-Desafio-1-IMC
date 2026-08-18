@@ -103,8 +103,14 @@ senão o elemento fica invisível). \`z\` crescente = mais à frente.
 rótulo. Com layerMode "per-group" (o padrão), elementos do mesmo grupo viram uma
 camada só, com um grupo interno por elemento. String vazia = elemento solto.
 
-\`name\` é o nome que a camada terá na timeline. Escreva como um designer escreveria:
-"Botão / Fundo", "Título", "Ícone / Seta" — o papel do elemento, não a forma dele.
+\`name\` é o nome que a camada terá na timeline. **Escreva SEMPRE em inglês**, mesmo
+que a conversa esteja em outro idioma: o arquivo circula entre times e clientes, e nome
+em inglês é o padrão que qualquer motion designer lê sem tradução.
+
+Escreva como um designer escreveria — o papel do elemento, não a forma dele:
+"Button / Background", "Title", "Icon / Arrow", "Card / Shadow". Nunca "Rect 3".
+
+Vale para tudo que vira nome dentro do After Effects: camada, grupo, comp e marcador.
 
 ## Tipos de forma
 

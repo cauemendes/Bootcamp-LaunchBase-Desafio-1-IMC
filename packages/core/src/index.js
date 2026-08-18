@@ -38,6 +38,16 @@ export {
 } from "./anim.js";
 
 export {
+  DEFAULT_SCENE_FRAMES,
+  DEFAULT_WPM,
+  MIN_SCENE_FRAMES,
+  SequenceError,
+  countWords,
+  framesForText,
+  planSequence,
+} from "./sequence.js";
+
+export {
   DEFAULT_FALLBACK_FONT,
   DEFAULT_SNAP_TOLERANCE,
   applyBrand,

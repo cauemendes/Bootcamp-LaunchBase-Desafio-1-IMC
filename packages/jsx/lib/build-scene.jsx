@@ -60,11 +60,11 @@ function vecBuildScene(scene, options) {
     return { ok: false, error: "A cena não tem nenhuma camada para construir." };
   }
 
-  var compName = vec.safeName(options.compName, "Cena Vetorizada");
+  var compName = vec.safeName(options.compName, "Vectorized Scene");
 
   // Um único grupo de undo para a cena inteira: o usuário desfaz com um Ctrl+Z, e
   // não com um por camada.
-  app.beginUndoGroup("Vectorize AE — " + compName);
+  app.beginUndoGroup("Vectorize AE - " + compName);
 
   try {
     var comp = vecResolveComp(scene.canvas, compName, options);
