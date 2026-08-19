@@ -328,3 +328,39 @@ test("o painel só lê arquivos .json completos, nunca os .tmp", async () => {
     stop();
   }
 });
+
+// ---------------------------------------------------------------- diagnóstico
+
+test("diagnose distingue painel ausente de painel que parou", () => {
+  // A diferença entre estes dois estados é a diferença entre um clique e uma noite de
+  // tentativas cegas. A informação existia no heartbeat e era descartada.
+  const dir = tempDir();
+  const bridge = new Bridge({ dir });
+
+  const semSinal = bridge.diagnose();
+  assert.equal(semSinal.state, "sem-sinal");
+  assert.match(semSinal.message, /AÇÃO/);
+
+  const heartbeat = path.join(dir, "heartbeat.json");
+
+  writeJsonAtomic(heartbeat, { at: Date.now() - 600_000, afterEffects: "26.3x87", cycles: 4821 });
+  const parado = bridge.diagnose();
+  assert.equal(parado.state, "parado");
+  assert.match(parado.message, /PAROU de escutar/);
+  assert.match(parado.message, /4821 ciclos/, "quantos ciclos rodou antes de morrer");
+  // Sem isto, um agente sem supervisão fica tentando para sempre.
+  assert.match(parado.message, /não se resolve sozinho/);
+
+  writeJsonAtomic(heartbeat, { at: Date.now(), afterEffects: "26.3x87", cycles: 12, revivals: 2 });
+  const vivo = bridge.diagnose();
+  assert.equal(vivo.state, "vivo");
+  assert.match(vivo.message, /ESTÁ escutando/);
+  assert.match(vivo.message, /2 reanimações/);
+});
+
+test("diagnose não estoura com heartbeat corrompido", () => {
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, "heartbeat.json"), "{ lixo", "utf8");
+
+  assert.equal(new Bridge({ dir }).diagnose().state, "sem-sinal");
+});

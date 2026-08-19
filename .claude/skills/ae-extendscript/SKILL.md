@@ -277,6 +277,37 @@ Ao colocar arte vetorial, ligue `layer.collapseTransformation = true`. É a rast
 contínua: sem ela, um `.ai` colocado a 40% e depois ampliado sai borrado. No logo do
 cliente isso é o tipo de detalhe que ninguém perdoa.
 
+## `scheduleTask` morre se a função lançar
+
+`app.scheduleTask(codigo, ms, true)` repete até `cancelTask` — **ou até uma exceção
+escapar da função agendada.** Aí o After Effects cancela a tarefa e nada avisa: a
+interface continua exatamente como estava, mostrando o último estado que alguém escreveu
+nela.
+
+Num painel que faz polling isso é devastador. O painel continua dizendo "ouvindo" e não
+está escutando mais nada. Aconteceu aqui: oito horas de tentativas de fora contra uma
+tarefa que havia sido cancelada de madrugada.
+
+Duas defesas, e vale ter as duas:
+
+```javascript
+function meuPoll() {
+  try {
+    trabalho();
+  } catch (e) {
+    try { log(e); } catch (e2) {}   // até o log pode lançar, se a UI morreu
+  }
+}
+
+// Supervisor: segunda tarefa independente que reanima a primeira.
+function supervisor() {
+  if (agora() - ultimoCiclo > INTERVALO * 3) {
+    app.cancelTask(idDoPoll);
+    idDoPoll = app.scheduleTask("meuPoll()", INTERVALO, true);
+  }
+}
+```
+
 ## Não renderize para `Folder.temp` no macOS
 
 `Folder.temp` resolve para `/private/var/folders/…/T/TemporaryItems`, uma pasta

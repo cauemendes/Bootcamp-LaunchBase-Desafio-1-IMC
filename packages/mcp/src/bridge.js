@@ -114,32 +114,63 @@ export class Bridge {
   }
 
   /**
-   * O que o heartbeat diz sobre o painel.
+   * Estado do painel, lido do heartbeat.
    *
-   * Um timeout tem dois significados muito diferentes — "o painel não está aberto" e
-   * "o painel está aberto e falhou ao responder" — e a mensagem genérica manda o
-   * usuário conferir justamente o que já está certo. O heartbeat separa os dois casos
-   * sem custo: é um arquivo que o painel reescreve a cada 2s.
+   * Público porque `check_bridge` precisa disto. A versão anterior tinha este
+   * diagnóstico e o descartava: a ferramenta capturava a exceção e devolvia um
+   * genérico "a ponte não respondeu". Numa execução noturna isso custou oito horas de
+   * tentativas contra um painel que estava aberto e havia parado de escutar — a
+   * informação existia e não chegava a quem precisava dela.
+   *
+   * @returns {{state: string, message: string, heartbeat: object|null}}
    */
-  #diagnose() {
+  diagnose() {
     let dados;
     try {
       dados = JSON.parse(fs.readFileSync(path.join(this.dir, "heartbeat.json"), "utf8"));
     } catch {
-      return "O painel nunca deu sinal de vida nesta pasta — provavelmente não está aberto.";
+      return {
+        state: "sem-sinal",
+        heartbeat: null,
+        message:
+          "O painel nunca deu sinal de vida nesta pasta. Provavelmente não está aberto, " +
+          "ou o After Effects não está rodando.\n\n" +
+          "AÇÃO: no After Effects, abra Window → bridge-panel.jsx e confirme que mostra " +
+          "“ouvindo”. Se já estiver aberto, clique em Parar e depois Iniciar.",
+      };
     }
 
     const idade = (Date.now() - dados.at) / 1000;
 
     if (idade > 15) {
-      return `O último sinal do painel foi há ${Math.round(idade)}s: ele foi fechado, está ` +
-        "em “parado”, ou o After Effects está com uma janela de diálogo aberta na frente " +
-        "(o polling não roda enquanto há diálogo modal).";
+      return {
+        state: "parado",
+        heartbeat: dados,
+        message:
+          `O painel está no projeto mas PAROU de escutar há ${Math.round(idade)}s ` +
+          `(${dados.cycles ?? "?"} ciclos até parar). O After Effects pode estar com um ` +
+          "diálogo modal na frente, ou o painel foi fechado.\n\n" +
+          "AÇÃO: traga o After Effects para a frente e veja se há uma janela de diálogo " +
+          "esperando resposta. Depois clique em Parar e Iniciar no painel.\n\n" +
+          "NÃO fique tentando de novo em silêncio: sem alguém mexer no After Effects, " +
+          "isto não se resolve sozinho. Avise quem está acompanhando.",
+      };
     }
 
-    return `O painel ESTÁ vivo (sinal há ${idade.toFixed(1)}s, After Effects ${dados.afterEffects}) — ` +
-      "então ele recebeu o comando e falhou ao gravar a resposta. O log do painel, dentro " +
-      "do After Effects, mostra o erro exato.";
+    return {
+      state: "vivo",
+      heartbeat: dados,
+      message:
+        `O painel ESTÁ escutando (sinal há ${idade.toFixed(1)}s, After Effects ` +
+        `${dados.afterEffects}, ${dados.cycles ?? "?"} ciclos` +
+        (dados.revivals ? `, ${dados.revivals} reanimações do polling` : "") +
+        ") — então ele recebeu o comando e falhou ao responder. O log do painel, dentro " +
+        "do After Effects, mostra o erro exato.",
+    };
+  }
+
+  #diagnose() {
+    return this.diagnose().message;
   }
 
   #discardCommand(id) {

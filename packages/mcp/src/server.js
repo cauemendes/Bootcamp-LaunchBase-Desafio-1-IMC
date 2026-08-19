@@ -104,7 +104,20 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         const { result } = await call("ping", {}, { timeoutMs: 4000 });
         return asText({ conectado: true, ...result });
       } catch {
-        return asError(`A ponte não respondeu.\n\n${BRIDGE_HINT}`);
+        // O diagnóstico do heartbeat existia e era descartado aqui. Distinguir "não
+        // está aberto" de "está aberto e parou de escutar" é a diferença entre um
+        // clique e uma noite de tentativas cegas.
+        const d = bridge.diagnose();
+
+        return asError(
+          `A ponte não respondeu.\n\nDIAGNÓSTICO: ${d.message}\n\n` +
+            (d.state === "vivo"
+              ? ""
+              : "IMPORTANTE: isto exige alguém mexer no After Effects. Se você está " +
+                "rodando sem acompanhamento, PARE e registre o bloqueio em vez de " +
+                "tentar de novo indefinidamente — nenhuma quantidade de tentativas " +
+                "resolve um painel que precisa de um clique.")
+        );
       }
     }
   );
@@ -709,7 +722,8 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         "pelo `script` da cena, ou o padrão. A estimativa por texto não pretende ser " +
         "exata: ela põe as cenas perto do lugar certo para o designer ajustar ouvindo o " +
         "áudio, que é como esse trabalho é feito de verdade.\n\n" +
-        "Nomeie comps e marcadores em INGLÊS.",
+        "Nomeie comps e marcadores em inglês — só os nomes dentro do After Effects. " +
+        "Continue conversando com o usuário no idioma dele.",
       inputSchema: {
         name: z.string().describe('Nome da comp master, em inglês. Ex.: "Master - Bid Adjustments".'),
         width: z.number().int().optional().describe("Largura. Padrão 1920."),

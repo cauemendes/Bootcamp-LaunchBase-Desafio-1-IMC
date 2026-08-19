@@ -47,6 +47,13 @@ if ($.global.vecBridgeTaskId !== undefined && $.global.vecBridgeTaskId !== null)
   $.global.vecBridgeTaskId = null;
 }
 
+if ($.global.vecBridgeSupervisorId !== undefined && $.global.vecBridgeSupervisorId !== null) {
+  try {
+    app.cancelTask($.global.vecBridgeSupervisorId);
+  } catch (e) {}
+  $.global.vecBridgeSupervisorId = null;
+}
+
 var vecBridge = {
   running: false,
   taskId: null,
@@ -55,6 +62,10 @@ var vecBridge = {
   ui: null,
   log: [],
   lastHeartbeat: 0,
+  lastPoll: 0,
+  cycles: 0,
+  supervisorId: null,
+  revivals: 0,
   // null = ainda não sei se dá pra escrever dentro de res/. Ver vecWriteResult().
   resSubpastaOk: null,
   POLL_MS: 350,
@@ -308,7 +319,12 @@ function vecBridgeHeartbeat(dirs) {
       '{"at":' + agora +
       ',"afterEffects":' + vec.quote(app.version) +
       ',"processed":' + vecBridge.processed +
-      ',"errors":' + vecBridge.errors + "}"
+      ',"errors":' + vecBridge.errors +
+      // `cycles` e `revivals` são o que permite ao lado Node distinguir "AE fechado"
+      // de "AE aberto e o polling morreu" — dois problemas com soluções diferentes,
+      // que antes davam a mesma mensagem inútil.
+      ',"cycles":' + vecBridge.cycles +
+      ',"revivals":' + vecBridge.revivals + "}"
     );
     tmp.close();
 
@@ -355,9 +371,39 @@ function vecRespostaDeEmergencia(dirs, id, motivo) {
 /**
  * Um ciclo de polling. Chamado por `app.scheduleTask` — precisa ser global.
  */
+/**
+ * Um ciclo de polling, com tudo dentro de um try.
+ *
+ * ── Por que o try envolve o corpo inteiro ─────────────────────────────────────
+ * Uma exceção que escapa daqui faz o After Effects **cancelar a tarefa agendada**. O
+ * polling morre, o painel continua mostrando "ouvindo" — porque o texto não muda
+ * sozinho — e a ponte fica inerte sem nenhum sinal na tela.
+ *
+ * Foi isso que consumiu uma noite inteira de execução: oito horas de tentativas contra
+ * um painel que parecia aberto e tinha parado de escutar. Qualquer coisa pode lançar
+ * aqui: uma pasta que ficou inacessível, um `getFiles` num volume que dormiu, uma
+ * escrita de log numa UI já destruída. Nenhuma dessas justifica derrubar a ponte.
+ */
 function vecBridgePoll() {
   if (!vecBridge.running) return;
 
+  // Antes de qualquer coisa que possa falhar: é este carimbo que o supervisor usa
+  // para saber que o polling ainda está de pé.
+  vecBridge.lastPoll = new Date().getTime();
+  vecBridge.cycles++;
+
+  try {
+    vecBridgePollInterno();
+  } catch (e) {
+    // Log em try próprio: se a UI foi destruída, escrever nela lança — e essa exceção
+    // seria justamente a que mata a tarefa.
+    try {
+      vecBridgeLog("erro no ciclo de polling (a ponte continua): " + vec.describeError(e));
+    } catch (e2) {}
+  }
+}
+
+function vecBridgePollInterno() {
   var dirs;
   try {
     dirs = vecBridgeDir();
@@ -421,6 +467,49 @@ function vecBridgePoll() {
   );
 }
 
+/**
+ * Supervisor: confere se o polling ainda está vivo e o reanima.
+ *
+ * Duas tarefas agendadas independentes em vez de uma. Se o polling morrer — por
+ * exceção, por cancelamento, por qualquer motivo que eu não previ — o supervisor
+ * reagenda em poucos segundos e a ponte volta sozinha. Só uma falha que derrube as
+ * duas deixa a ferramenta parada, e isso é uma classe de problema muito menor.
+ *
+ * O intervalo é folgado de propósito: o supervisor não faz trabalho, só verifica um
+ * número. Rodar rápido não o tornaria mais útil.
+ */
+function vecBridgeSupervise() {
+  if (!vecBridge.running) return;
+
+  try {
+    var agora = new Date().getTime();
+    var idade = agora - vecBridge.lastPoll;
+
+    // Três vezes o intervalo do polling: folga suficiente para não confundir uma
+    // operação demorada dentro do AE com um polling morto.
+    if (idade < vecBridge.POLL_MS * 3) return;
+
+    vecBridge.revivals++;
+
+    if (vecBridge.taskId !== null) {
+      try {
+        app.cancelTask(vecBridge.taskId);
+      } catch (e) {}
+    }
+
+    vecBridge.taskId = app.scheduleTask("vecBridgePoll()", vecBridge.POLL_MS, true);
+    $.global.vecBridgeTaskId = vecBridge.taskId;
+    vecBridge.lastPoll = agora;
+
+    vecBridgeLog(
+      "o polling havia parado (" + Math.round(idade / 1000) + "s sem ciclo) — reiniciei. " +
+        "Reanimações nesta sessão: " + vecBridge.revivals
+    );
+  } catch (e) {
+    // Nem o supervisor pode lançar: se ele morrer, ninguém reanima ninguém.
+  }
+}
+
 function vecBridgeStart() {
   if (vecBridge.running) return;
 
@@ -444,8 +533,13 @@ function vecBridgeStart() {
   if (antigos.length > 0) vecBridgeLog("descartei " + antigos.length + " comando(s) de sessão anterior");
 
   vecBridge.running = true;
+  vecBridge.lastPoll = new Date().getTime();
   vecBridge.taskId = app.scheduleTask("vecBridgePoll()", vecBridge.POLL_MS, true);
   $.global.vecBridgeTaskId = vecBridge.taskId;
+
+  // Segunda tarefa, independente: vigia a primeira.
+  vecBridge.supervisorId = app.scheduleTask("vecBridgeSupervise()", 5000, true);
+  $.global.vecBridgeSupervisorId = vecBridge.supervisorId;
 
   vecBridgeStatus("ouvindo");
   vecBridgeLog("ponte ativa em " + dirs.base.fsName);
@@ -462,6 +556,14 @@ function vecBridgeStop() {
     } catch (e) {}
     vecBridge.taskId = null;
     $.global.vecBridgeTaskId = null;
+  }
+
+  if (vecBridge.supervisorId !== null) {
+    try {
+      app.cancelTask(vecBridge.supervisorId);
+    } catch (e) {}
+    vecBridge.supervisorId = null;
+    $.global.vecBridgeSupervisorId = null;
   }
 
   vecBridge.running = false;

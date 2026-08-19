@@ -317,6 +317,36 @@ ninguém ter pedido nada naquele momento.
 
 ---
 
+## Execução longa sem acompanhamento
+
+Isto foi aprendido perdendo uma noite. Uma fila de 54 cenas ficou oito horas tentando
+contra um painel que estava aberto e havia **parado de escutar** — e a ferramenta
+respondia sempre a mesma coisa: "a ponte não respondeu".
+
+Três coisas mudaram por causa disso:
+
+**O polling não morre mais por exceção.** Uma exceção escapando do ciclo de polling faz
+o After Effects cancelar a tarefa agendada. O polling para, o painel continua mostrando
+"ouvindo" — porque o texto não muda sozinho — e a ponte fica inerte sem sinal nenhum na
+tela. Agora o corpo inteiro está dentro de um `try`, e nada escapa.
+
+**Existe um supervisor.** Uma segunda tarefa agendada, independente, confere a cada 5s
+se o polling deu sinal. Se não deu, reagenda. Só uma falha que derrube as duas deixa a
+ponte parada, e o log conta quantas vezes o polling precisou ser reanimado.
+
+**`check_bridge` diz qual é o problema.** Antes ele tinha o diagnóstico e o descartava.
+Agora distingue os três estados, porque as ações são diferentes:
+
+| Estado | O que significa | O que fazer |
+|---|---|---|
+| `sem-sinal` | o painel nunca escreveu heartbeat | abrir o painel no AE |
+| `parado` | escreveu e parou — diálogo modal na frente, ou fechado | trazer o AE para frente, Parar e Iniciar |
+| `vivo` | está escutando e falhou ao responder | ler o log do painel |
+
+E a mensagem agora **manda parar** quando o problema exige alguém no teclado. Nenhuma
+quantidade de tentativas resolve um painel que precisa de um clique; insistir em
+silêncio só transforma um bloqueio de dois minutos numa noite perdida.
+
 ## Quando algo não funciona
 
 **"A ponte não respondeu"** — na ordem: o After Effects está aberto? O painel está
