@@ -142,17 +142,50 @@ export class Bridge {
 
     const idade = (Date.now() - dados.at) / 1000;
 
+    // Desligado no botão. Estado normal, e o conselho é o mais simples de todos —
+    // que só ajuda se não vier embrulhado no alarme de "travou".
+    if (dados.running === false) {
+      return {
+        state: "desligado",
+        heartbeat: dados,
+        message:
+          "O painel está aberto e a ponte está PARADA no botão — não travou, foi " +
+          "desligada.\n\nAÇÃO: clique em Iniciar no painel Vectorize AE Bridge.",
+      };
+    }
+
     if (idade > 15) {
+      // Quanto tempo a ponte viveu antes de congelar é o que diz *onde* olhar.
+      // Congelar poucos segundos depois de iniciar é a assinatura de um diálogo do
+      // After Effects na subida ou na abertura do projeto: enquanto ele está na tela,
+      // a thread principal está bloqueada e nenhuma tarefa agendada roda.
+      const uptime = typeof dados.uptime === "number" ? dados.uptime / 1000 : null;
+      const morreuNaSubida = uptime !== null && uptime < 30;
+
       return {
         state: "parado",
         heartbeat: dados,
         message:
           `O painel está no projeto mas PAROU de escutar há ${Math.round(idade)}s ` +
-          `(${dados.cycles ?? "?"} ciclos até parar). O After Effects pode estar com um ` +
-          "diálogo modal na frente, ou o painel foi fechado.\n\n" +
-          "AÇÃO: traga o After Effects para a frente e veja se há uma janela de diálogo " +
-          "esperando resposta. Depois clique em Parar e Iniciar no painel.\n\n" +
-          "NÃO fique tentando de novo em silêncio: sem alguém mexer no After Effects, " +
+          `(${dados.cycles ?? "?"} ciclos` +
+          (uptime !== null ? `, ${uptime.toFixed(1)}s de vida antes de congelar` : "") +
+          ").\n\n" +
+          (morreuNaSubida
+            ? "A ponte congelou poucos segundos depois de começar. Isso é quase sempre um " +
+              "DIÁLOGO do After Effects na tela: erro na abertura do projeto, fonte " +
+              "faltando, footage ausente. Enquanto o diálogo está aberto a thread " +
+              "principal do AE fica bloqueada, e NENHUMA tarefa agendada roda — o " +
+              "polling do painel inclusive.\n\n" +
+              "Por isso Parar → Iniciar não resolve neste caso: o clique agenda a tarefa, " +
+              "e a tarefa não roda enquanto o diálogo não sair da tela.\n\n" +
+              "AÇÃO, nesta ordem: (1) traga o After Effects para a frente e feche todo " +
+              "diálogo aberto, inclusive atrás da janela principal; (2) só então clique em " +
+              "Parar e Iniciar no painel."
+            : "O After Effects pode estar com um diálogo modal na frente, ou o painel foi " +
+              "fechado.\n\nAÇÃO: traga o After Effects para a frente e veja se há uma " +
+              "janela de diálogo esperando resposta. Depois clique em Parar e Iniciar no " +
+              "painel.") +
+          "\n\nNÃO fique tentando de novo em silêncio: sem alguém mexer no After Effects, " +
           "isto não se resolve sozinho. Avise quem está acompanhando.",
       };
     }

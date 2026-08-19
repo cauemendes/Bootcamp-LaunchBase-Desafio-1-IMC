@@ -286,6 +286,42 @@ impedir que ele apareça**, com `app.beginSuppressDialogs()` em volta da operaç
 Num painel que faz polling isso não é detalhe: um aviso na tela congela a ponte, e o
 sintoma que chega ao usuário é "perdi a conexão" — apontando para o lugar errado.
 
+### Enquanto o diálogo está na tela, `scheduleTask` não roda
+
+Consequência que custa horas se não estiver escrita: o modal bloqueia a thread principal,
+e é ela que executa as tarefas agendadas. Então **clicar em Parar → Iniciar no painel não
+resolve nada** — o clique agenda a tarefa, e a tarefa fica na fila até o diálogo sair.
+
+Isso produz um sintoma que parece impossível: o heartbeat congelado no mesmo número de
+ciclos por minutos a fio, imune a reinício. Não é a ponte com defeito; é um diálogo
+esperando um clique, às vezes atrás da janela principal.
+
+O sinal que separa os dois casos é **quanto tempo a ponte viveu antes de congelar**.
+Poucos segundos = diálogo na subida do app ou na abertura do projeto. Por isso vale gravar
+`uptime` no heartbeat: sem ele, os dois casos dão a mesma mensagem e o conselho vai para o
+lado errado.
+
+### Não inicie o polling na carga do painel
+
+Painel encaixado carrega junto com o workspace, durante a subida do After Effects — antes
+de haver projeto aberto. Começar a escutar ali põe uma tarefa agendada rodando no meio da
+carga do app e do projeto.
+
+```javascript
+// Errado: roda durante a subida do AE.
+meuStart();
+
+// Certo: repeat=false só registra o timer; o callback espera a thread principal
+// desocupar. Se o AE ainda estiver subindo — ou com um diálogo na frente — ele atrasa.
+app.scheduleTask("meuStart()", 4000, false);
+```
+
+`internal verification failure, sorry! {no current context}` é o erro que aparece quando
+algo consulta o DOM num momento em que o AE não tem contexto válido. Se ele surge ao abrir
+o projeto e há um script fazendo polling desde a subida, isole antes de acusar: tire o
+painel da pasta ScriptUI Panels, reinicie o AE e abra o mesmo projeto. Se o erro
+permanecer, ele é do projeto ou de outro plugin — não do painel.
+
 ## `timeSpanStart` da fila de render é em tempo de exibição
 
 `comp.displayStartTime` não é zero quando a comp veio de uma sequência maior. A fila de

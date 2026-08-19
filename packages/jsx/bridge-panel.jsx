@@ -66,6 +66,11 @@ var vecBridge = {
   cycles: 0,
   supervisorId: null,
   revivals: 0,
+  startedAt: 0,
+  // O auto-início é adiado (ver o fim do arquivo). Um clique no botão é decisão
+  // explícita do usuário e cancela o agendamento pendente.
+  autoStart: true,
+  avisouHeartbeat: false,
   // null = ainda não sei se dá pra escrever dentro de res/. Ver vecWriteResult().
   resSubpastaOk: null,
   POLL_MS: 350,
@@ -303,18 +308,22 @@ function vecReadCommand(file) {
  * Com o heartbeat, basta olhar a idade do arquivo — sem esperar, sem bloquear.
  * O lado Node também usa isso para saber se vale a pena tentar um comando.
  */
-function vecBridgeHeartbeat(dirs) {
+function vecBridgeHeartbeat(dirs, forcar) {
   var agora = new Date().getTime();
 
   // Escrever a cada ciclo de 350ms seria disco à toa; 2s dá resolução de sobra
-  // para diferenciar "vivo" de "morto".
-  if (vecBridge.lastHeartbeat && agora - vecBridge.lastHeartbeat < 2000) return;
+  // para diferenciar "vivo" de "morto". `forcar` existe para o heartbeat final,
+  // gravado ao parar a ponte, que precisa sair na hora.
+  if (!forcar && vecBridge.lastHeartbeat && agora - vecBridge.lastHeartbeat < 2000) return;
   vecBridge.lastHeartbeat = agora;
 
   try {
     var tmp = new File(dirs.base.fsName + "/heartbeat.json.tmp");
     tmp.encoding = "UTF-8";
-    if (!tmp.open("w")) return;
+    if (!tmp.open("w")) {
+      vecBridgeAvisoHeartbeat("open('w') devolveu false");
+      return;
+    }
     tmp.write(
       '{"at":' + agora +
       ',"afterEffects":' + vec.quote(app.version) +
@@ -324,16 +333,44 @@ function vecBridgeHeartbeat(dirs) {
       // de "AE aberto e o polling morreu" — dois problemas com soluções diferentes,
       // que antes davam a mesma mensagem inútil.
       ',"cycles":' + vecBridge.cycles +
-      ',"revivals":' + vecBridge.revivals + "}"
+      ',"revivals":' + vecBridge.revivals +
+      // `running` separa "parei porque me pediram" de "congelei". Sem isto, um painel
+      // com a ponte desligada no botão é indistinguível de um painel travado, e o
+      // conselho que o lado Node dá para cada caso é diferente.
+      ',"running":' + (vecBridge.running ? "true" : "false") +
+      // `uptime` é o que revela *quando* congelou. Parar depois de 2s de vida é a
+      // assinatura de um diálogo do After Effects na subida; parar depois de meia hora
+      // é outro problema inteiramente.
+      ',"uptime":' + (vecBridge.startedAt ? agora - vecBridge.startedAt : 0) + "}"
     );
     tmp.close();
 
     var alvo = new File(dirs.base.fsName + "/heartbeat.json");
     if (alvo.exists) alvo.remove();
-    tmp.rename("heartbeat.json");
+    if (!tmp.rename("heartbeat.json")) vecBridgeAvisoHeartbeat("rename devolveu false");
   } catch (e) {
     // Heartbeat é diagnóstico; falhar aqui não pode derrubar o polling.
+    vecBridgeAvisoHeartbeat(vec.describeError(e));
   }
+}
+
+/**
+ * Avisa no log que o heartbeat não está sendo gravado — uma vez, não a cada 2s.
+ *
+ * Antes esta falha era engolida em silêncio, e o efeito era cruel: o arquivo
+ * congelava no último valor bom, o lado Node lia "parou de escutar há 300s" e mandava
+ * reiniciar o painel — enquanto o painel estava perfeito e só não conseguia gravar o
+ * arquivo de diagnóstico. Silêncio aqui manda investigar o lugar errado.
+ */
+function vecBridgeAvisoHeartbeat(motivo) {
+  if (vecBridge.avisouHeartbeat) return;
+  vecBridge.avisouHeartbeat = true;
+  try {
+    vecBridgeLog(
+      "AVISO: não consigo gravar heartbeat.json (" + motivo + "). A ponte funciona, " +
+        "mas o servidor vai achar que ela parou. Só aviso isto uma vez."
+    );
+  } catch (e) {}
 }
 
 /**
@@ -534,6 +571,7 @@ function vecBridgeStart() {
 
   vecBridge.running = true;
   vecBridge.lastPoll = new Date().getTime();
+  vecBridge.startedAt = vecBridge.lastPoll;
   vecBridge.taskId = app.scheduleTask("vecBridgePoll()", vecBridge.POLL_MS, true);
   $.global.vecBridgeTaskId = vecBridge.taskId;
 
@@ -545,6 +583,16 @@ function vecBridgeStart() {
   vecBridgeLog("ponte ativa em " + dirs.base.fsName);
 
   if (vecBridge.ui && vecBridge.ui.toggle) vecBridge.ui.toggle.text = "Parar";
+}
+
+/**
+ * Alvo do auto-início adiado. Global porque `scheduleTask` avalia uma string no
+ * escopo global — uma função aninhada não seria encontrada.
+ */
+function vecBridgeAutoStart() {
+  if (!vecBridge.autoStart) return;
+  vecBridge.autoStart = false;
+  vecBridgeStart();
 }
 
 function vecBridgeStop() {
@@ -567,6 +615,13 @@ function vecBridgeStop() {
   }
 
   vecBridge.running = false;
+
+  // Heartbeat final. Sem ele o arquivo fica com `running:true` para sempre, e o
+  // servidor lê uma ponte desligada de propósito como uma ponte travada.
+  try {
+    vecBridgeHeartbeat(vecBridgeDir(), true);
+  } catch (e) {}
+
   vecBridgeStatus("parado");
   vecBridgeLog("ponte parada");
 
@@ -608,6 +663,10 @@ function vecBridgeStop() {
     vecBridge.ui = { win: win, status: status, toggle: toggle, logBox: logBox };
 
     toggle.onClick = function () {
+      // Um clique é decisão explícita e vence o auto-início pendente — inclusive um
+      // "Parar" durante a espera, que antes seria desfeito pelo agendamento.
+      vecBridge.autoStart = false;
+
       if (vecBridge.running) {
         vecBridgeStop();
       } else {
@@ -648,7 +707,17 @@ function vecBridgeStop() {
 
   vecBridgeLog("painel carregado — After Effects " + app.version);
 
-  // Auto-inicia: se o painel está aberto, a intenção é escutar. Ter que clicar
-  // "Iniciar" toda vez seria só uma etapa a mais para esquecer.
-  vecBridgeStart();
+  // ── Por que o auto-início é adiado ──────────────────────────────────────────
+  // Se o painel está aberto, a intenção é escutar — clicar "Iniciar" toda vez seria
+  // só uma etapa a mais para esquecer. Mas iniciar *agora* é errado: um painel
+  // encaixado carrega junto com o workspace, durante a subida do After Effects, antes
+  // de existir projeto aberto. O polling ficava rodando no meio da carga do app e do
+  // projeto — o momento em que o DOM do AE menos aguenta ser tocado.
+  //
+  // `scheduleTask` com repeat=false só registra o timer; o callback roda depois, na
+  // thread principal, quando ela estiver livre. Se o AE ainda estiver ocupado
+  // subindo, ou com um diálogo na frente, ele simplesmente atrasa — que é exatamente
+  // o comportamento desejado.
+  vecBridgeStatus("aguardando o After Effects terminar de subir…");
+  app.scheduleTask("vecBridgeAutoStart()", 4000, false);
 })(this);

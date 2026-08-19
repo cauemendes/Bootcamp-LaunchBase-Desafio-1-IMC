@@ -358,6 +358,45 @@ test("diagnose distingue painel ausente de painel que parou", () => {
   assert.match(vivo.message, /2 reanimações/);
 });
 
+test("diagnose separa ponte desligada no botão de ponte travada", () => {
+  // Os dois estados davam a mesma mensagem de alarme, e o conselho correto para cada
+  // um é diferente: aqui basta clicar em Iniciar.
+  const dir = tempDir();
+  writeJsonAtomic(path.join(dir, "heartbeat.json"), {
+    at: Date.now() - 600_000,
+    afterEffects: "26.3x87",
+    cycles: 40,
+    running: false,
+  });
+
+  const parado = new Bridge({ dir }).diagnose();
+  assert.equal(parado.state, "desligado");
+  assert.match(parado.message, /PARADA no botão/);
+  assert.doesNotMatch(parado.message, /diálogo/, "não é um caso de diálogo modal");
+});
+
+test("diagnose reconhece a assinatura do diálogo na subida", () => {
+  // Congelar poucos segundos depois de iniciar não é uma ponte com defeito: é um
+  // diálogo do After Effects bloqueando a thread principal. E enquanto ele está lá,
+  // Parar → Iniciar não pode funcionar — o clique agenda uma tarefa que não roda.
+  // Foi exatamente esse conselho impossível que um agente ficou repetindo.
+  const dir = tempDir();
+  const heartbeat = path.join(dir, "heartbeat.json");
+  const base = { at: Date.now() - 120_000, afterEffects: "26.3x87", running: true };
+
+  writeJsonAtomic(heartbeat, { ...base, cycles: 7, uptime: 2_400 });
+  const naSubida = new Bridge({ dir }).diagnose();
+  assert.equal(naSubida.state, "parado");
+  assert.match(naSubida.message, /2\.4s de vida/);
+  assert.match(naSubida.message, /Parar → Iniciar não resolve/);
+
+  // Meia hora de vida antes de congelar é outro problema: não vale culpar a subida.
+  writeJsonAtomic(heartbeat, { ...base, cycles: 5_000, uptime: 1_800_000 });
+  const maisTarde = new Bridge({ dir }).diagnose();
+  assert.equal(maisTarde.state, "parado");
+  assert.doesNotMatch(maisTarde.message, /Parar → Iniciar não resolve/);
+});
+
 test("diagnose não estoura com heartbeat corrompido", () => {
   const dir = tempDir();
   fs.writeFileSync(path.join(dir, "heartbeat.json"), "{ lixo", "utf8");
