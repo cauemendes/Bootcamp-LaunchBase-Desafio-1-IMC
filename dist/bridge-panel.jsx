@@ -863,7 +863,8 @@ vec.JUSTIFICATION = {
 
 /**
  * @param {CompItem} comp
- * @param {Object} spec  { name, content, x, y, fontFamily, fontSize, weight, align, letterSpacing, color, opacity }
+ * @param {Object} spec  { name, content, x, y, fontFamily, fontSize, weight, align,
+ *                          letterSpacing, lineHeight, color, opacity }
  * @param {Object} opts  { gamma: Number }
  * @returns {{ layer: TextLayer, fontWarning: String|null }}
  */
@@ -888,6 +889,21 @@ vec.addTextLayer = function (comp, spec, opts) {
 
   if (spec.letterSpacing) {
     doc.tracking = spec.letterSpacing;
+  }
+
+  // ── Entrelinha ────────────────────────────────────────────────────────────
+  // Sem `autoLeading = false` o After Effects ignora `leading` e usa 1,2 × o corpo.
+  // Design costuma usar entrelinha mais fechada que isso, e a diferença aparece
+  // exatamente onde é mais visível: texto de duas linhas dentro de um botão.
+  //
+  // Em try porque `leading` e `autoLeading` são propriedades relativamente novas do
+  // TextDocument. Se faltarem, o texto sai com a entrelinha automática do AE — pior que
+  // o pedido, e muito melhor que derrubar a camada inteira.
+  if (spec.lineHeight) {
+    try {
+      doc.autoLeading = false;
+      doc.leading = spec.lineHeight;
+    } catch (e) {}
   }
 
   var fontWarning = vec.applyFont(doc, spec.fontFamily, spec.weight);
@@ -3001,7 +3017,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 8;
+var VEC_PANEL_BUILD = 9;
 
 var VEC_BRIDGE_SCHEMA = 3;
 

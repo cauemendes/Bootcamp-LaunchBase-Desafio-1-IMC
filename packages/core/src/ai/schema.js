@@ -115,7 +115,14 @@ export const SHAPE_SCHEMA = {
         type: { type: "string", enum: ["text"] },
         x: { type: "number", description: "Ponto de ancoragem do texto, eixo X." },
         y: { type: "number", description: "Baseline do texto, eixo Y." },
-        content: { type: "string", description: "O texto exatamente como aparece na imagem." },
+        content: {
+          type: "string",
+          description:
+            "O texto exatamente como aparece na imagem. Texto de VÁRIAS LINHAS vai num " +
+            'elemento só, com "\\n" entre as linhas — nunca em dois elementos. Dois ' +
+            "elementos deixam a entrelinha não-editável e o bloco impossível de alinhar " +
+            "como um só.",
+        },
         fontFamily: {
           type: "string",
           description:
@@ -126,8 +133,18 @@ export const SHAPE_SCHEMA = {
         weight: { type: "string", description: 'Peso/estilo: "Regular", "Bold", "Light"... Vazio se não souber.' },
         align: { type: "string", enum: ["left", "center", "right"] },
         letterSpacing: { type: "number", description: "Tracking em milésimos de em; 0 se for normal." },
+        lineHeight: {
+          type: "number",
+          description:
+            "Entrelinha em pixels, medida de baseline a baseline. Obrigatória quando o " +
+            "content tem mais de uma linha; 0 quando é uma linha só. Sem ela o After " +
+            "Effects usa 1,2 × o corpo, que quase sempre é mais solto que o original.",
+        },
       },
-      required: ["type", "x", "y", "content", "fontFamily", "fontSize", "weight", "align", "letterSpacing"],
+      required: [
+        "type", "x", "y", "content", "fontFamily", "fontSize", "weight", "align",
+        "letterSpacing", "lineHeight",
+      ],
       additionalProperties: false,
     },
   ],

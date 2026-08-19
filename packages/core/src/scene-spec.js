@@ -21,6 +21,85 @@ const LINE_CAPS = new Set(["butt", "round", "square"]);
 const LINE_JOINS = new Set(["miter", "round", "bevel"]);
 const TEXT_ALIGNS = new Set(["left", "center", "right"]);
 
+
+/** Quantas linhas o conteúdo tem. Uma, no mínimo, mesmo vazio. */
+function contarLinhas(content) {
+  if (typeof content !== "string" || content === "") return 1;
+  return content.split("\n").length;
+}
+
+/** Comprimento da linha mais longa — é ela que define a largura do bloco. */
+function maiorLinha(content) {
+  if (typeof content !== "string") return 0;
+  let maior = 0;
+  for (const linha of content.split("\n")) maior = Math.max(maior, linha.length);
+  return maior;
+}
+
+/**
+ * Avisa quando dois textos são, na verdade, um texto de duas linhas.
+ *
+ * ── Por que isto merece uma conferência própria ───────────────────────────────
+ * "Broad match" dentro de um botão é um texto com uma quebra de linha, não dois textos.
+ * Reconstruído como dois, ele fica errado de três formas ao mesmo tempo: a entrelinha
+ * vira a distância que o modelo chutou entre duas posições, editar a frase exige mexer
+ * em duas camadas, e alinhar o bloco no botão passa a ser impossível sem mover as duas.
+ *
+ * É um erro que não parece erro numa conferência de tela — as palavras estão todas lá,
+ * no lugar aproximado. Ele aparece na hora de editar, que é depois de o trabalho ter
+ * sido entregue.
+ *
+ * A conferência é deliberadamente estreita: mesma fonte, mesmo corpo, mesmo alinhamento,
+ * mesma cor, praticamente a mesma coluna, e distância vertical compatível com entrelinha.
+ * Melhor deixar passar um caso duvidoso do que acusar um layout que era mesmo de dois
+ * textos — aviso falso ensina a ignorar aviso.
+ */
+function avisarTextoPartido(elements, warnings) {
+  const textos = [];
+
+  elements.forEach((el, i) => {
+    if (!el || !el.shape || el.shape.type !== "text") return;
+    if (typeof el.shape.content !== "string") return;
+    if (!isFiniteNumber(el.shape.x) || !isFiniteNumber(el.shape.y)) return;
+    if (!isPositiveNumber(el.shape.fontSize)) return;
+    textos.push({ i, s: el.shape, cor: el.fill?.color ?? null });
+  });
+
+  for (let a = 0; a < textos.length; a++) {
+    for (let b = a + 1; b < textos.length; b++) {
+      const um = textos[a];
+      const outro = textos[b];
+
+      if (um.s.fontSize !== outro.s.fontSize) continue;
+      if ((um.s.fontFamily ?? "") !== (outro.s.fontFamily ?? "")) continue;
+      if ((um.s.weight ?? "") !== (outro.s.weight ?? "")) continue;
+      if ((um.s.align ?? "left") !== (outro.s.align ?? "left")) continue;
+      if (um.cor !== outro.cor) continue;
+
+      // Mesma coluna: tolerância de um décimo do corpo, que cobre arredondamento de
+      // medição sem aceitar textos que só estão por perto.
+      if (Math.abs(um.s.x - outro.s.x) > um.s.fontSize * 0.1) continue;
+
+      // Distância vertical de entrelinha plausível. Abaixo de 0,9 seria sobreposição;
+      // acima de 1,8 já é outro bloco de texto.
+      const dy = Math.abs(um.s.y - outro.s.y);
+      if (dy < um.s.fontSize * 0.9 || dy > um.s.fontSize * 1.8) continue;
+
+      const acima = um.s.y < outro.s.y ? um : outro;
+      const abaixo = um.s.y < outro.s.y ? outro : um;
+
+      warnings.push(
+        `elements[${um.i}] e elements[${outro.i}] parecem ser UM texto de duas linhas ` +
+          `partido em dois: mesma fonte, mesmo corpo, mesma coluna, e ` +
+          `${Math.round(dy)}px de distância vertical. Junte num só elemento, com "\\n" ` +
+          `no content ("${acima.s.content}\\n${abaixo.s.content}"), posicionado na ` +
+          `baseline da PRIMEIRA linha, e informe lineHeight: ${Math.round(dy)}. Em duas ` +
+          `camadas a entrelinha não é editável e o bloco não se alinha como um só.`
+      );
+    }
+  }
+}
+
 /**
  * Valida um SceneSpec flat.
  *
@@ -111,6 +190,8 @@ export function validateScene(scene) {
       warnings.push(`${at} não tem fill nem stroke — será invisível na comp`);
     }
   });
+
+  avisarTextoPartido(scene.elements, warnings);
 
   return { ok: errors.length === 0, errors, warnings };
 }
@@ -204,6 +285,13 @@ function validateShape(shape, at, errors, warnings, canvas) {
       }
       if (shape.align != null && !TEXT_ALIGNS.has(shape.align)) {
         warnings.push(`${at}.shape.align inválido (${shape.align}) — usando "left"`);
+      }
+      if (typeof shape.content === "string" && shape.content.indexOf("\n") !== -1 && !shape.lineHeight) {
+        warnings.push(
+          `${at}: texto de várias linhas sem lineHeight — o After Effects vai usar ` +
+            `1,2 × o corpo, que costuma ficar mais solto que o original. Meça de ` +
+            `baseline a baseline.`
+        );
       }
       if (typeof shape.fontFamily !== "string" || shape.fontFamily === "") {
         warnings.push(`${at}: sem fontFamily — o AE vai usar a fonte padrão`);
@@ -301,8 +389,10 @@ export function shapeBounds(shape) {
       return {
         x: shape.x,
         y: shape.y - shape.fontSize,
-        width: (shape.content?.length ?? 0) * shape.fontSize * 0.55,
-        height: shape.fontSize * 1.2,
+        // Conta as linhas: a estimativa alimenta o aviso de enquadramento, e um texto
+        // de duas linhas medido como uma sempre pareceria caber.
+        width: maiorLinha(shape.content) * shape.fontSize * 0.55,
+        height: contarLinhas(shape.content) * (shape.lineHeight || shape.fontSize * 1.2),
       };
     default:
       return null;
@@ -521,6 +611,10 @@ function buildTextLayer(el) {
     weight: s.weight || "",
     align: TEXT_ALIGNS.has(s.align) ? s.align : "left",
     letterSpacing: numOr(s.letterSpacing, 0),
+    // Entrelinha em pixels, medida de baseline a baseline. Zero significa "deixe o
+    // After Effects decidir" — ele usa 1,2 × o corpo, que é solto para a maioria dos
+    // designs mas é um padrão honesto quando ninguém mediu.
+    lineHeight: numOr(s.lineHeight, 0),
     color: safeHex(el.fill?.color) || "#ffffff",
     opacity: clamp(numOr(el.fill?.opacity, 100), 0, 100),
   };

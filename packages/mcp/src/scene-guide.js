@@ -137,6 +137,22 @@ silhuetas que não são nenhuma das outras.
 **Texto é \`text\`, sempre.** Nunca desenhe letra como path — o texto precisa
 continuar editável para ajuste e tradução.
 
+**Texto de duas linhas é UM elemento, não dois.** Um rótulo como "Broad match" dentro de
+um botão é um texto com quebra de linha. Reconstruído como dois elementos, ele fica errado
+de três formas ao mesmo tempo: a entrelinha passa a ser a distância entre duas posições
+chutadas, editar a frase exige mexer em duas camadas, e alinhar o bloco no botão fica
+impossível sem mover as duas. E nada disso aparece numa conferência de tela — as palavras
+estão todas lá, no lugar aproximado. Aparece na hora de editar, depois de entregue.
+
+\`\`\`json
+{ "shape": { "type": "text", "content": "Broad\\nmatch", "x": 260, "y": 512,
+             "fontSize": 64, "lineHeight": 62, "align": "center", "…": "…" } }
+\`\`\`
+
+A posição é a baseline da **primeira** linha. \`lineHeight\` é de baseline a baseline, em
+pixels — meça as duas baselines no frame e subtraia. Sem ele o After Effects usa 1,2 × o
+corpo, que é mais solto que a maioria dos designs.
+
 **Cores repetidas usam exatamente o mesmo hex.** Amostre do meio das áreas chapadas,
 longe das bordas, que estão suavizadas e devolvem cor errada.
 

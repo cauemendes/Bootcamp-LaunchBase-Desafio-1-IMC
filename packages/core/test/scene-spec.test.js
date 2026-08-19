@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { validateScene, normalizeScene, shapeBounds } from "../src/scene-spec.js";
+import {
+  SCENE_SPEC_VERSION,
+  normalizeScene,
+  shapeBounds,
+  validateScene,
+} from "../src/scene-spec.js";
 
 const el = (over = {}) => ({
   id: "e1",
@@ -428,4 +433,142 @@ test("imagem fora do canvas recebe o mesmo aviso de enquadramento das formas", (
   };
 
   assert.match(validateScene(cena).warnings.join(" "), /fora do canvas/);
+});
+
+test("texto de duas linhas guarda a entrelinha", () => {
+  const cena = normalizeScene({
+    version: SCENE_SPEC_VERSION,
+    canvas: { width: 400, height: 400 },
+    elements: [
+      {
+        id: "rotulo",
+        shape: {
+          type: "text",
+          content: "Broad\nmatch",
+          x: 200,
+          y: 180,
+          fontSize: 64,
+          lineHeight: 62,
+          align: "center",
+          fontFamily: "Arial",
+        },
+        fill: { color: "#ffffff" },
+      },
+    ],
+  });
+
+  assert.equal(cena.layers[0].content, "Broad\nmatch");
+  assert.equal(cena.layers[0].lineHeight, 62);
+});
+
+test("uma linha só não inventa entrelinha", () => {
+  // Zero significa "deixe o After Effects decidir". Cravar um valor aqui trocaria o
+  // padrão do AE por um chute nosso, sem ninguém ter medido nada.
+  const cena = normalizeScene({
+    version: SCENE_SPEC_VERSION,
+    canvas: { width: 400, height: 400 },
+    elements: [
+      {
+        id: "rotulo",
+        shape: { type: "text", content: "Broad", x: 200, y: 180, fontSize: 64, fontFamily: "Arial" },
+        fill: { color: "#ffffff" },
+      },
+    ],
+  });
+
+  assert.equal(cena.layers[0].lineHeight, 0);
+});
+
+test("várias linhas sem lineHeight geram aviso", () => {
+  const { warnings } = validateScene({
+    version: SCENE_SPEC_VERSION,
+    canvas: { width: 400, height: 400 },
+    elements: [
+      {
+        id: "rotulo",
+        shape: {
+          type: "text",
+          content: "Broad\nmatch",
+          x: 200,
+          y: 180,
+          fontSize: 64,
+          fontFamily: "Arial",
+        },
+        fill: { color: "#ffffff" },
+      },
+    ],
+  });
+
+  assert.ok(warnings.some((w) => /lineHeight/.test(w) && /baseline/.test(w)));
+});
+
+/** Duas linhas do mesmo rótulo, como um modelo as mandaria se partisse o texto. */
+function textoPartido(extra = {}) {
+  const base = {
+    type: "text",
+    fontSize: 64,
+    fontFamily: "Arial",
+    weight: "Bold",
+    align: "center",
+    x: 200,
+  };
+
+  return {
+    version: SCENE_SPEC_VERSION,
+    canvas: { width: 400, height: 400 },
+    elements: [
+      {
+        id: "linha1",
+        shape: { ...base, content: "Broad", y: 180 },
+        fill: { color: "#ffffff" },
+      },
+      {
+        id: "linha2",
+        shape: { ...base, content: "match", y: 242, ...extra },
+        fill: { color: "#ffffff" },
+      },
+    ],
+  };
+}
+
+test("dois textos que são um só de duas linhas viram aviso com a correção pronta", () => {
+  // O defeito relatado em uso: "Broad match" saiu como duas camadas. Não parece errado
+  // na tela — aparece na hora de editar, depois de entregue.
+  const { warnings } = validateScene(textoPartido());
+
+  const aviso = warnings.find((w) => /UM texto de duas linhas/.test(w));
+  assert.ok(aviso, "o aviso tem que existir");
+
+  // O aviso carrega a correção montada: o content junto, na ordem certa, e a entrelinha
+  // já medida. Sem isso ele só diria "está errado" e deixaria o trabalho para quem lê.
+  assert.match(aviso, /Broad\\nmatch/);
+  assert.match(aviso, /lineHeight: 62/);
+  assert.match(aviso, /baseline da PRIMEIRA linha/);
+});
+
+test("a detecção de texto partido não acusa o que é mesmo separado", () => {
+  // Aviso falso ensina a ignorar aviso, então cada critério tem que segurar sozinho.
+  const naoAcusa = (extra, motivo) => {
+    const { warnings } = validateScene(textoPartido(extra));
+    assert.ok(
+      !warnings.some((w) => /UM texto de duas linhas/.test(w)),
+      `não devia acusar: ${motivo}`
+    );
+  };
+
+  naoAcusa({ fontSize: 40 }, "corpo diferente");
+  naoAcusa({ fontFamily: "Futura" }, "fonte diferente");
+  naoAcusa({ weight: "Regular" }, "peso diferente");
+  naoAcusa({ align: "left" }, "alinhamento diferente");
+  naoAcusa({ x: 320 }, "outra coluna");
+  naoAcusa({ y: 400 }, "longe demais para ser entrelinha");
+  naoAcusa({ y: 200 }, "perto demais para ser entrelinha");
+});
+
+test("cor diferente também não é texto partido", () => {
+  const cena = textoPartido();
+  cena.elements[1].fill = { color: "#ff0000" };
+
+  const { warnings } = validateScene(cena);
+  assert.ok(!warnings.some((w) => /UM texto de duas linhas/.test(w)));
 });

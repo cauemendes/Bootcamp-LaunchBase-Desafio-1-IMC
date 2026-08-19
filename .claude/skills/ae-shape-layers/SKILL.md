@@ -197,3 +197,22 @@ Para um stroke que era inside, encolha a forma em uma espessura e mantenha a lar
 
 Em contornos concêntricos o erro se acumula a cada nível, e o espaço entre eles é onde
 aparece primeiro.
+
+## Entrelinha exige desligar o automático
+
+`TextDocument.leading` é ignorado enquanto `autoLeading` for true — e true é o padrão, com
+1,2 × o corpo. Design costuma fechar mais que isso, e a diferença aparece justamente onde
+mais se nota: texto de duas linhas dentro de um botão.
+
+```javascript
+doc.autoLeading = false;
+doc.leading = entrelinhaEmPixels;   // baseline a baseline
+```
+
+Em try/catch: as duas propriedades são relativamente novas no TextDocument, e ficar sem a
+entrelinha pedida é muito melhor que derrubar a camada.
+
+E texto de várias linhas é **uma** camada com `\n` no `sourceText`, nunca duas camadas
+empilhadas. Em duas, a entrelinha deixa de existir como propriedade — vira a distância
+entre duas posições —, editar a frase exige mexer nas duas, e o bloco não se alinha como
+um só. O erro não aparece em conferência de tela; aparece na hora de editar.
