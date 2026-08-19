@@ -21,7 +21,26 @@ import { validateBrand } from "@vectorize-ae/core";
 
 export function resolveBrandDir(env = process.env) {
   if (env.VECTORIZE_AE_BRAND_DIR) return env.VECTORIZE_AE_BRAND_DIR;
+  return resolveLocalDataDir(env);
+}
 
+/**
+ * Pasta de dados desta máquina, ignorando qualquer redirecionamento.
+ *
+ * ── Por que o perfil ativo não pode ser compartilhado ─────────────────────────
+ * `VECTORIZE_AE_BRAND_DIR` existe para uma equipe apontar os perfis para uma pasta
+ * sincronizada — Dropbox, Drive — e todo mundo ter as marcas de todos os clientes sem
+ * copiar arquivo à mão. Isso funciona para os perfis, que são um catálogo.
+ *
+ * Não funciona para `brand-active.json`, que é a resposta a "em qual cliente EU estou
+ * trabalhando agora". Compartilhado, ele vira a pior classe de erro deste projeto: um
+ * colega troca de cliente do outro lado da cidade, sua próxima cena sai com a paleta
+ * errada, e nada na sua tela sugere o motivo — as cores estão lá, são de uma marca de
+ * verdade, e a construção não falha.
+ *
+ * Então o catálogo pode viajar e o ponteiro fica em casa.
+ */
+export function resolveLocalDataDir(env = process.env) {
   const base =
     process.platform === "darwin"
       ? path.join(os.homedir(), "Library", "Application Support")
@@ -46,14 +65,20 @@ export function slugify(name) {
 }
 
 export class BrandStore {
-  constructor({ dir } = {}) {
+  constructor({ dir, localDir } = {}) {
     this.dir = dir ?? resolveBrandDir();
     this.brandsDir = path.join(this.dir, "brands");
-    this.activeFile = path.join(this.dir, "brand-active.json");
+
+    // Sem redirecionamento os dois caminhos são o mesmo, e nada muda. Com
+    // redirecionamento, o catálogo vai para a pasta compartilhada e o ponteiro fica
+    // aqui — ver `resolveLocalDataDir`.
+    this.localDir = localDir ?? dir ?? resolveLocalDataDir();
+    this.activeFile = path.join(this.localDir, "brand-active.json");
   }
 
   #ensure() {
     fs.mkdirSync(this.brandsDir, { recursive: true });
+    fs.mkdirSync(this.localDir, { recursive: true });
   }
 
   /** Perfis salvos, por slug. */

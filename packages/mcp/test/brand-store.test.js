@@ -6,6 +6,8 @@ import path from "node:path";
 
 import { BrandStore, slugify } from "../src/brand-store.js";
 
+const tempDir = () => fs.mkdtempSync(path.join(os.tmpdir(), "vec-brand-test-"));
+
 const tempStore = () =>
   new BrandStore({ dir: fs.mkdtempSync(path.join(os.tmpdir(), "vec-brand-test-")) });
 
@@ -97,4 +99,40 @@ test("arquivo de perfil corrompido não derruba a leitura", () => {
   // Melhor cair para "sem marca" e perguntar do que estourar no meio de uma
   // reconstrução que o usuário já pediu.
   assert.equal(store.active(), null);
+});
+
+test("catálogo compartilhado, perfil ativo local", () => {
+  // ── Por que os dois não podem morar juntos ───────────────────────────────────
+  // Apontar VECTORIZE_AE_BRAND_DIR para uma pasta sincronizada é o que permite uma
+  // equipe ter as marcas de todos os clientes sem copiar arquivo à mão. Isso vale para
+  // os perfis, que são catálogo. Não vale para "em qual cliente EU estou agora":
+  // compartilhado, um colega trocando de cliente faria a sua próxima cena sair com a
+  // paleta errada, sem nada na tela sugerindo o motivo.
+  const compartilhada = tempDir();
+  const local = tempDir();
+
+  const meu = new BrandStore({ dir: compartilhada, localDir: local });
+  meu.save({ name: "Amazon Ads", colors: { primary: "#ff9900" } });
+
+  const colega = new BrandStore({ dir: compartilhada, localDir: tempDir() });
+  colega.save({ name: "Outro Cliente", colors: { primary: "#0055ff" } });
+
+  // O catálogo é comum: cada um enxerga a marca do outro.
+  assert.equal(meu.list().length, 2);
+  assert.equal(colega.list().length, 2);
+
+  // O ponteiro não: o colega ativou a marca dele e a minha continua a minha.
+  assert.equal(meu.active().slug, "amazon-ads");
+  assert.equal(colega.active().slug, "outro-cliente");
+});
+
+test("sem redirecionamento, catálogo e ponteiro moram juntos", () => {
+  // O caso de uma máquina só não pode ficar mais complicado por causa do caso da equipe.
+  const dir = tempDir();
+  const store = new BrandStore({ dir });
+
+  store.save({ name: "Cliente X", colors: { primary: "#123456" } });
+
+  assert.equal(store.active().slug, "cliente-x");
+  assert.ok(fs.existsSync(path.join(dir, "brand-active.json")));
 });

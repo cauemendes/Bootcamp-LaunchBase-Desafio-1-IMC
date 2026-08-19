@@ -72,6 +72,32 @@ próximas vezes que você abrir o After Effects.
 
 Para testar, peça ao Claude: *"confira a ponte com o After Effects"*.
 
+## Marcas de cliente, e como compartilhar com a equipe
+
+Cada cliente tem um perfil com cores, fontes e logos. Você configura uma vez, com
+`set_brand`, e daí em diante pede as cenas usando nomes — `"primary"`, `"heading"` — em
+vez de hexadecimal. Isso não é conforto: é o que impede vinte camadas saírem com vinte
+laranjas ligeiramente diferentes.
+
+Os perfis ficam **fora do repositório**, em
+`~/Library/Application Support/vectorize-ae/brands/`. Identidade de cliente é dado de
+trabalho, não código, e paleta de cliente costuma vir marcada como confidencial — não
+pode acabar num commit por acidente.
+
+Para a equipe compartilhar o catálogo, aponte a pasta para um lugar sincronizado:
+
+```bash
+export VECTORIZE_AE_BRAND_DIR="/Users/voce/Dropbox/.../vectorize-ae-marcas"
+```
+
+Quem configurar a marca de um cliente configura para todo mundo. Quem entrar num projeto
+novo já encontra a paleta certa.
+
+O perfil **ativo** não é compartilhado, de propósito: ele fica sempre nesta máquina. Ele
+responde "em qual cliente eu estou trabalhando agora", e compartilhado viraria a pior
+classe de erro possível — um colega troca de cliente do outro lado da cidade e a sua
+próxima cena sai com a paleta errada, sem nada na tela sugerindo o motivo.
+
 ## Atualizar para uma versão nova
 
 ```bash
