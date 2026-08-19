@@ -174,3 +174,52 @@ test("roteiro completo vira uma timeline plausível", () => {
   assert.ok(scenes[2].durationFrames >= MIN_SCENE_FRAMES);
   assert.ok(totalFrames / 24 > 5, "um roteiro de três falas passa de cinco segundos");
 });
+
+test("fitToAudio sem a duração do áudio avisa em vez de ignorar calado", () => {
+  // ── O defeito relatado em uso ────────────────────────────────────────────────
+  // `fitToAudio: true` sem `audioDurationFrames` caía fora do bloco de ajuste e a
+  // sequência saía com as durações originais. O resultado é uma comp master montada,
+  // plausível e com o ritmo errado — nada indicando que a instrução foi ignorada.
+  // Numa montagem de 54 cenas isso só aparece ouvindo.
+  const plano = planSequence({
+    fps: 30,
+    fitToAudio: true,
+    scenes: [
+      { comp: "A", durationFrames: 60 },
+      { comp: "B", durationFrames: 90 },
+    ],
+  });
+
+  assert.equal(plano.totalFrames, 150, "sem áudio, as durações ficam como estavam");
+
+  const aviso = plano.warnings.find((w) => /IGNOREI o fitToAudio/.test(w));
+  assert.ok(aviso, "o aviso tem que existir");
+  assert.match(aviso, /audioDurationFrames/);
+  assert.match(aviso, /describe_project/, "diz onde achar o número");
+});
+
+test("com a duração do áudio, fitToAudio continua esticando e não avisa à toa", () => {
+  const plano = planSequence({
+    fps: 30,
+    fitToAudio: true,
+    audioDurationFrames: 300,
+    scenes: [
+      { comp: "A", durationFrames: 60 },
+      { comp: "B", durationFrames: 90 },
+    ],
+  });
+
+  assert.equal(plano.totalFrames, 300);
+  assert.ok(!plano.warnings.some((w) => /IGNOREI/.test(w)));
+});
+
+test("sem fitToAudio, a ausência da duração do áudio não vira aviso", () => {
+  // Passar o áudio é opcional quando ninguém pediu para casar com ele. Avisar aqui
+  // seria ruído, e ruído ensina a ignorar aviso.
+  const plano = planSequence({
+    fps: 30,
+    scenes: [{ comp: "A", durationFrames: 60 }],
+  });
+
+  assert.ok(!plano.warnings.some((w) => /fitToAudio/.test(w)));
+});

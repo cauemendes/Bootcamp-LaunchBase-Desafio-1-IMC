@@ -835,15 +835,25 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .int()
           .optional()
           .describe(
-            "Duração do áudio em frames, se você já souber. Serve para avisar quando as " +
-              "cenas não cobrem o áudio."
+            "Duração do áudio em frames. Serve para avisar quando as cenas não cobrem o " +
+              "áudio, e é OBRIGATÓRIA com fitToAudio. Pegue em describe_project: o item " +
+              "de footage do áudio traz `duration` em segundos — multiplique por frameRate."
           ),
         fitToAudio: z
           .boolean()
           .optional()
           .describe(
             "Esticar ou encolher todas as cenas proporcionalmente para casar com o áudio. " +
-              "Mantém o ritmo relativo entre elas."
+              "Mantém o ritmo relativo entre elas. EXIGE audioDurationFrames."
+          ),
+        fit: z
+          .enum(["contain", "cover", "none"])
+          .optional()
+          .describe(
+            "Como encaixar uma cena de tamanho diferente do da master. contain (padrão): " +
+              "cabe inteira, com tarja se a proporção não bater. cover: preenche o quadro " +
+              "cortando o que sobra. none: entra em 100%, pixel a pixel. Cenas do mesmo " +
+              "tamanho da master não são tocadas em nenhum dos modos."
           ),
         defaultDurationFrames: z
           .number()
@@ -878,8 +888,21 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .describe("Substituir a master se já existir. DESTRUTIVO — pergunte antes."),
       },
     },
-    async ({ name, width, height, frameRate, audio, replace, ...spec }) => {
+    async ({ name, width, height, frameRate, audio, replace, fit, ...spec }) => {
       const fps = frameRate ?? 30;
+
+      // Falhar antes de montar, e não avisar depois de montado. Uma master com o ritmo
+      // errado parece pronta: as 54 cenas estão lá, na ordem certa, e só ouvindo é que
+      // se percebe. Recusar aqui custa uma chamada; descobrir depois custa a montagem
+      // inteira e a confiança no resultado.
+      if (spec.fitToAudio && spec.audioDurationFrames == null) {
+        return asError(
+          "fitToAudio precisa de audioDurationFrames — sem ele não há com o que casar, e " +
+            "a master sairia com as durações originais parecendo pronta.\n\n" +
+            "Chame describe_project: o item de footage do áudio traz `duration` em " +
+            "segundos. Multiplique por frameRate e passe o resultado."
+        );
+      }
 
       let plano;
       try {
@@ -897,6 +920,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
             width: width ?? 1920,
             height: height ?? 1080,
             frameRate: fps,
+            fit: fit ?? "contain",
             totalFrames: plano.totalFrames,
             audio,
             scenes: plano.scenes,

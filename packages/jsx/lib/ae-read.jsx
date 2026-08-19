@@ -55,6 +55,10 @@ vec.describeProject = function () {
         id: item.id,
         width: item.width,
         height: item.height,
+        // A duração é o que permite montar uma comp master casada com a locução sem
+        // ninguém precisar medir o arquivo por fora. Sem ela, `fitToAudio` exigia um
+        // número que só existia na cabeça de quem tinha aberto o áudio em outro lugar.
+        duration: round(item.duration, 3),
         file: null,
       };
 

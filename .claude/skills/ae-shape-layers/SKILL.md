@@ -216,3 +216,20 @@ E texto de várias linhas é **uma** camada com `\n` no `sourceText`, nunca duas
 empilhadas. Em duas, a entrelinha deixa de existir como propriedade — vira a distância
 entre duas posições —, editar a frase exige mexer nas duas, e o bloco não se alinha como
 um só. O erro não aparece em conferência de tela; aparece na hora de editar.
+
+## Comp aninhada entra em 100%, não encaixada
+
+`master.layers.add(compCena)` coloca a comp em escala 100% — pixel a pixel, centralizada.
+Quando a cena tem o mesmo tamanho da master isso está certo. Quando não tem, sai tarja em
+volta ou conteúdo estourando o quadro, e nada no código pediu isso.
+
+```javascript
+var fx = master.width / compCena.width;
+var fy = master.height / compCena.height;
+var f = Math.min(fx, fy);          // contain; Math.max seria cover
+layer.property("ADBE Transform Group").property("ADBE Scale").setValue([f * 100, f * 100]);
+```
+
+Prefira `contain` como padrão. `cover` corta, e cortar é irreversível: some conteúdo sem
+deixar rastro. Tarja é feia e visível, e quem olha decide o que fazer. E avise quando
+escalar — uma montagem de dezenas de cenas erra todas de uma vez, em silêncio.

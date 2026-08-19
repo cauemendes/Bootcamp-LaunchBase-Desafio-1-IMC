@@ -152,6 +152,19 @@ export function planSequence(spec) {
 
   const audio = numero(spec.audioDurationFrames, null);
 
+  // ── Pedir para casar com o áudio e não passar o áudio ───────────────────────
+  // Era um não-fazer-nada silencioso: `fitToAudio: true` sem `audioDurationFrames`
+  // caía fora do bloco abaixo e a sequência saía com as durações originais. O
+  // resultado é uma comp master montada, plausível e com o ritmo errado — e nada
+  // indicando que a instrução foi ignorada.
+  if (spec.fitToAudio && audio === null) {
+    warnings.push(
+      "IGNOREI o fitToAudio: ele precisa de `audioDurationFrames` para saber com o que " +
+        "casar, e nenhum valor foi passado. As cenas ficaram com as durações originais. " +
+        "A duração do áudio está em `describe_project`, no item de footage."
+    );
+  }
+
   if (audio !== null) {
     const diferenca = audio - totalFrames;
 

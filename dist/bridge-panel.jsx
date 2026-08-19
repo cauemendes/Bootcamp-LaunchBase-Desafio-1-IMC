@@ -4,18 +4,18 @@
  * GERADO AUTOMATICAMENTE — não edite este arquivo.
  *
  * Produzido por scripts/bundle-jsx.mjs a partir de:
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/bridge-panel.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/tools.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/util.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-shape.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-font.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-text.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-read.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-frame.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-anim.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-image.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-sequence.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/build-scene.jsx
+ *   packages/jsx/bridge-panel.jsx
+ *   packages/jsx/lib/tools.jsx
+ *   packages/jsx/lib/util.jsx
+ *   packages/jsx/lib/ae-shape.jsx
+ *   packages/jsx/lib/ae-font.jsx
+ *   packages/jsx/lib/ae-text.jsx
+ *   packages/jsx/lib/ae-read.jsx
+ *   packages/jsx/lib/ae-frame.jsx
+ *   packages/jsx/lib/ae-anim.jsx
+ *   packages/jsx/lib/ae-image.jsx
+ *   packages/jsx/lib/ae-sequence.jsx
+ *   packages/jsx/lib/build-scene.jsx
  *
  * Edite os originais em packages/jsx/ e rode a instalação de novo.
  */
@@ -977,6 +977,10 @@ vec.describeProject = function () {
         id: item.id,
         width: item.width,
         height: item.height,
+        // A duração é o que permite montar uma comp master casada com a locução sem
+        // ninguém precisar medir o arquivo por fora. Sem ela, `fitToAudio` exigia um
+        // número que só existia na cabeça de quem tinha aberto o áudio em outro lugar.
+        duration: round(item.duration, 3),
         file: null,
       };
 
@@ -2281,9 +2285,46 @@ function vecCrossfade(layer, inicioSegundos, duracaoSegundos) {
 }
 
 /**
+ * Encaixa a comp da cena no quadro da master.
+ *
+ * ── Por que isto não pode ficar implícito ─────────────────────────────────────
+ * `layers.add(comp)` coloca a comp em 100%, pixel a pixel. Quando a cena tem o mesmo
+ * tamanho da master — o caso normal — isso está certo e nada acontece. Quando não tem,
+ * o resultado é uma cena com tarja em volta ou estourando o quadro, e ninguém escreveu
+ * uma linha pedindo isso. Foi assim que 54 cenas foram montadas erradas de uma vez.
+ *
+ * O padrão é caber inteiro (`contain`). `cover` preenche o quadro cortando o que sobra,
+ * e cortar é irreversível: some conteúdo sem deixar rastro. Tarja é feia e visível, e
+ * quem olha decide o que fazer. Entre errar de um jeito que aparece e errar de um jeito
+ * que esconde, o que aparece é sempre melhor.
+ */
+function vecAjustarEscala(layer, compCena, plan, avisos) {
+  var modo = plan.fit || "contain";
+  if (modo === "none") return;
+
+  if (compCena.width === plan.width && compCena.height === plan.height) return;
+
+  var fx = plan.width / compCena.width;
+  var fy = plan.height / compCena.height;
+  var fator = modo === "cover" ? Math.max(fx, fy) : Math.min(fx, fy);
+
+  layer.property("ADBE Transform Group").property("ADBE Scale").setValue([fator * 100, fator * 100]);
+
+  avisos.push(
+    compCena.name + ": a cena é " + compCena.width + "×" + compCena.height + " e a master é " +
+      plan.width + "×" + plan.height + ". Escalei para " + Math.round(fator * 100) + "% (" +
+      modo + ")." +
+      (Math.abs(fx - fy) > 0.001
+        ? " As proporções são diferentes, então " +
+          (modo === "cover" ? "sobra conteúdo cortado fora do quadro." : "fica tarja em volta.")
+        : "")
+  );
+}
+
+/**
  * Monta a comp master.
  *
- * @param {Object} plan     { name, width, height, frameRate, totalFrames, audio, scenes }
+ * @param {Object} plan     { name, width, height, frameRate, totalFrames, audio, fit, scenes }
  * @returns {Object} relatório com avisos
  */
 vec.buildSequence = function (plan, options) {
@@ -2353,6 +2394,8 @@ vec.buildSequence = function (plan, options) {
       }
 
       var layer = master.layers.add(compCena);
+      vecAjustarEscala(layer, compCena, plan, avisos);
+
       var inicio = cena.startFrame / fps;
 
       // `startTime` desloca o conteúdo; `inPoint`/`outPoint` recortam. Os três juntos
@@ -3017,7 +3060,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 9;
+var VEC_PANEL_BUILD = 10;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
