@@ -81,7 +81,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * já tem o estado antigo, sem os campos novos. Aí é melhor recomeçar do zero do que
  * rodar com metade da estrutura.
  */
-var VEC_BRIDGE_SCHEMA = 2;
+var VEC_BRIDGE_SCHEMA = 3;
 
 if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SCHEMA) {
   $.global.vecBridgeState = {
@@ -105,7 +105,37 @@ if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SC
     avisouHeartbeat: false,
     // null = ainda não sei se dá pra escrever dentro de res/. Ver vecWriteResult().
     resSubpastaOk: null,
-    POLL_MS: 350,
+
+    // ── Ritmo do polling ──────────────────────────────────────────────────────
+    // Verificar a pasta a cada 350ms parece inofensivo e não é: cada verificação é uma
+    // execução de script, e o After Effects **recusa** executar script enquanto há um
+    // diálogo modal esperando resposta — recusa mostrando outro diálogo, "Cannot run a
+    // script while a modal dialog is waiting for response". A 350ms isso são 171
+    // diálogos de erro por minuto de diálogo aberto.
+    //
+    // O estrago não fica na ponte: qualquer script do usuário que abra uma janela
+    // própria — Motion, Ease and Wizz, um painel qualquer — fica inutilizável enquanto a
+    // ponte estiver escutando. A ferramenta não pode atrapalhar as outras ferramentas da
+    // pessoa.
+    //
+    // Daí três velocidades. Ocioso é lento, porque ninguém está esperando nada.
+    // Trabalhando é rápido, porque comando vem em rajada. E recuo é o que entra em cena
+    // quando um bloqueio é detectado, dobrando até o teto. Ver `vecBridgeRitmo`.
+    intervalo: 2000,
+    IDLE_MS: 2000,
+    BUSY_MS: 250,
+    MAX_MS: 16000,
+    // Bloqueios seguidos que fazem a ponte sair da frente de vez. Ver `vecBridgeRitmo`.
+    LIMITE_BLOQUEIOS: 5,
+    pausadaPorBloqueio: false,
+    // Depois de um comando, vale continuar rápido por um tempo: uma conversa com o
+    // servidor manda dezenas de comandos seguidos, não um isolado.
+    BUSY_JANELA: 60000,
+    busyUntil: 0,
+    // Quantos bloqueios seguidos, e quantos ciclos limpos desde o último.
+    bloqueios: 0,
+    limpos: 0,
+    avisouBloqueio: false,
   };
 }
 
@@ -132,6 +162,65 @@ function vecBridgeDir() {
   if (!res.exists) res.create();
 
   return { base: base, cmd: cmd, res: res };
+}
+
+/**
+ * Lembra, entre sessões do After Effects, se a ponte deve escutar.
+ *
+ * ── Por que isto não é conforto, é segurança ──────────────────────────────────
+ * Painel encaixado volta com o workspace: abrir o After Effects para trabalhar já
+ * trazia a ponte escutando, sem ninguém ter pedido. E ponte escutando atropela os
+ * outros scripts do usuário, porque o AE recusa executar script com diálogo na tela e
+ * mostra um erro a cada verificação. Ou seja: o auto-início transformava "abri o AE
+ * para usar o Motion" em "o Motion parou de funcionar".
+ *
+ * Com a preferência gravada, um clique em Parar vale para as próximas sessões também —
+ * é um interruptor de verdade. E um lote noturno em andamento sobrevive a um reinício
+ * do aplicativo, porque a última escolha foi "escutando".
+ *
+ * O padrão de instalação nova é **não** escutar. Escutar é a opção que pode incomodar;
+ * ela tem que ser pedida.
+ */
+function vecBridgePrefFile() {
+  return new File(vecBridgeDir().base.fsName + "/panel-pref.json");
+}
+
+function vecBridgeLerPref() {
+  try {
+    var f = vecBridgePrefFile();
+    if (!f.exists) return false;
+
+    f.encoding = "UTF-8";
+    if (!f.open("r")) return false;
+
+    var texto;
+    try {
+      texto = f.read();
+    } finally {
+      f.close();
+    }
+
+    // Comparação de substring em vez de eval: o arquivo é escrito por nós, tem uma
+    // chave só, e avaliar conteúdo de disco para ler um booleano seria desproporcional.
+    return String(texto).indexOf('"escutando":true') !== -1;
+  } catch (e) {
+    return false;
+  }
+}
+
+function vecBridgeGravarPref(escutando) {
+  try {
+    var f = vecBridgePrefFile();
+    f.encoding = "UTF-8";
+    if (!f.open("w")) return;
+    try {
+      f.write('{"escutando":' + (escutando ? "true" : "false") + "}");
+    } finally {
+      f.close();
+    }
+  } catch (e) {
+    // Preferência é conveniência: perdê-la custa um clique, não uma sessão.
+  }
 }
 
 // ---------------------------------------------------------------- ponte
@@ -446,7 +535,11 @@ function vecBridgeHeartbeat(dirs, forcar) {
       // `uptime` é o que revela *quando* congelou. Parar depois de 2s de vida é a
       // assinatura de um diálogo do After Effects na subida; parar depois de meia hora
       // é outro problema inteiramente.
-      ',"uptime":' + (vecBridge.startedAt ? agora - vecBridge.startedAt : 0) + "}"
+      ',"uptime":' + (vecBridge.startedAt ? agora - vecBridge.startedAt : 0) +
+      // Diz ao servidor que a pausa não é descuido: alguém está usando o After Effects.
+      // Sem isto ele manda "clique em Iniciar", que é o oposto do que a situação pede.
+      ',"pausadaPorBloqueio":' + (vecBridge.pausadaPorBloqueio ? "true" : "false") +
+      ',"intervalo":' + vecBridge.intervalo + "}"
     );
     tmp.close();
 
@@ -529,9 +622,24 @@ function vecRespostaDeEmergencia(dirs, id, motivo) {
 function vecBridgePoll() {
   if (!vecBridge.running) return;
 
-  // Antes de qualquer coisa que possa falhar: é este carimbo que o supervisor usa
-  // para saber que o polling ainda está de pé.
-  vecBridge.lastPoll = new Date().getTime();
+  var agora = new Date().getTime();
+
+  // ── Como se detecta que houve bloqueio ──────────────────────────────────────
+  // O After Effects recusa executar script com diálogo modal na tela, e a recusa
+  // acontece antes do nosso código: não há try/catch que a capture. O que sobra é
+  // medir depois. Se o ciclo demorou muito mais que o combinado, alguém segurou a
+  // thread principal — e a única coisa útil a fazer é passar a incomodar menos.
+  var atraso = vecBridge.lastPoll ? agora - vecBridge.lastPoll : 0;
+
+  if (atraso > vecBridge.intervalo * 4 + 1000) {
+    vecBridge.bloqueios++;
+    vecBridge.limpos = 0;
+  } else {
+    vecBridge.limpos++;
+  }
+
+  // Este carimbo é o que o supervisor usa para saber que o polling está de pé.
+  vecBridge.lastPoll = agora;
   vecBridge.cycles++;
 
   try {
@@ -542,6 +650,105 @@ function vecBridgePoll() {
     try {
       vecBridgeLog("erro no ciclo de polling (a ponte continua): " + vecBridgeMotivo(e));
     } catch (e2) {}
+  }
+
+  // Depois do trabalho, nunca antes: se o ritmo mudar, esta tarefa é cancelada e
+  // substituída, e o que vier depois da troca não roda.
+  try {
+    vecBridgeRitmo();
+  } catch (e) {}
+}
+
+/**
+ * Reagenda o polling com um intervalo novo.
+ *
+ * `scheduleTask` não deixa mudar o intervalo de uma tarefa existente, então trocar de
+ * ritmo é cancelar e agendar de novo.
+ */
+function vecBridgeAgendarPoll(ms) {
+  if (vecBridge.taskId !== null) {
+    try {
+      app.cancelTask(vecBridge.taskId);
+    } catch (e) {}
+  }
+
+  vecBridge.intervalo = ms;
+  vecBridge.taskId = app.scheduleTask("vecBridgePoll()", ms, true);
+  $.global.vecBridgeTaskId = vecBridge.taskId;
+}
+
+/** Intervalo que o estado atual pede. Ver o comentário de `intervalo` no estado. */
+function vecBridgeIntervaloDesejado() {
+  if (vecBridge.bloqueios > 0) {
+    var recuo = vecBridge.IDLE_MS;
+    for (var i = 0; i < vecBridge.bloqueios && recuo < vecBridge.MAX_MS; i++) recuo *= 2;
+    return recuo > vecBridge.MAX_MS ? vecBridge.MAX_MS : recuo;
+  }
+
+  if (vecBridge.busyUntil > new Date().getTime()) return vecBridge.BUSY_MS;
+
+  return vecBridge.IDLE_MS;
+}
+
+/**
+ * Ajusta o ritmo ao fim de cada ciclo.
+ *
+ * A recuperação é gradual, um degrau por três ciclos limpos, e não de uma vez. Voltar
+ * direto ao ritmo rápido depois de um bloqueio só recriaria a tempestade: o diálogo que
+ * bloqueou costuma ser o primeiro de vários, porque a pessoa está usando outro script.
+ */
+function vecBridgeRitmo() {
+  // ── Recuar não é suficiente ─────────────────────────────────────────────────
+  // Mesmo a 16s a ponte ainda produz um diálogo de erro por bloqueio, e quem está do
+  // outro lado é uma pessoa tentando usar o Motion ou outro painel. Bloqueio que
+  // insiste significa que o After Effects está sendo usado por alguém, e a única
+  // resposta correta é sair da frente e esperar ser chamada de volta.
+  //
+  // Numa execução sem ninguém acompanhando isto também está certo: diálogo que não sai
+  // da tela precisa de um humano de qualquer jeito.
+  if (vecBridge.bloqueios >= vecBridge.LIMITE_BLOQUEIOS) {
+    vecBridge.pausadaPorBloqueio = true;
+
+    vecBridgeLog(
+      "PAUSEI a ponte: " + vecBridge.bloqueios + " bloqueios seguidos. O After Effects " +
+        "está sendo usado por outro script ou esperando resposta numa janela, e cada " +
+        "verificação minha virava um erro na sua tela."
+    );
+    vecBridgeLog("Clique em Iniciar quando quiser a ponte de volta.");
+
+    vecBridgeStop();
+    vecBridgeStatus("pausada — o After Effects está ocupado");
+    return;
+  }
+
+  if (vecBridge.bloqueios > 0 && vecBridge.limpos >= 3) {
+    vecBridge.bloqueios--;
+    vecBridge.limpos = 0;
+
+    if (vecBridge.bloqueios === 0) {
+      vecBridge.avisouBloqueio = false;
+      vecBridgeLog("o bloqueio passou — voltei ao ritmo normal.");
+    }
+  }
+
+  var alvo = vecBridgeIntervaloDesejado();
+  if (alvo === vecBridge.intervalo) return;
+
+  var subiu = alvo > vecBridge.intervalo;
+  vecBridgeAgendarPoll(alvo);
+
+  if (subiu && vecBridge.bloqueios > 0 && !vecBridge.avisouBloqueio) {
+    vecBridge.avisouBloqueio = true;
+    vecBridgeLog(
+      "algo bloqueou a thread do After Effects — quase sempre uma janela aberta por " +
+        "outro script, ou pelo próprio AE. Passei a verificar a cada " +
+        (alvo / 1000).toFixed(0) + "s para não atrapalhar."
+    );
+    vecBridgeLog(
+      "Se você vai trabalhar com outro script agora, clique em Parar: enquanto a ponte " +
+        "escuta, o AE recusa rodar script com diálogo na tela e mostra um erro a cada " +
+        "verificação."
+    );
   }
 }
 
@@ -565,6 +772,9 @@ function vecBridgePollInterno() {
 
     var comando = vecReadCommand(arquivo);
     if (!comando || !comando.id) continue;
+
+    // Comando vem em rajada: fica rápido por um tempo depois deste.
+    vecBridge.busyUntil = new Date().getTime() + vecBridge.BUSY_JANELA;
 
     vecBridgeStatus("executando " + comando.tool + "…");
     vecBridgeLog("→ " + comando.tool);
@@ -629,7 +839,9 @@ function vecBridgeSupervise() {
 
     // Três vezes o intervalo do polling: folga suficiente para não confundir uma
     // operação demorada dentro do AE com um polling morto.
-    if (idade < vecBridge.POLL_MS * 3) return;
+    // Folga sobre o intervalo *ativo*, não sobre um número fixo: em recuo de 30s um
+    // limite de 1s faria o supervisor reanimar um polling que está apenas devagar.
+    if (idade < vecBridge.intervalo * 3 + 2000) return;
 
     vecBridge.revivals++;
 
@@ -639,8 +851,7 @@ function vecBridgeSupervise() {
       } catch (e) {}
     }
 
-    vecBridge.taskId = app.scheduleTask("vecBridgePoll()", vecBridge.POLL_MS, true);
-    $.global.vecBridgeTaskId = vecBridge.taskId;
+    vecBridgeAgendarPoll(vecBridge.intervalo);
     vecBridge.lastPoll = agora;
 
     vecBridgeLog(
@@ -652,7 +863,12 @@ function vecBridgeSupervise() {
   }
 }
 
-function vecBridgeStart() {
+/**
+ * @param {Boolean} rapido true quando um humano clicou e está esperando resposta.
+ *   No auto-início ninguém clicou, então começar no ritmo rápido só aumentaria a
+ *   chance de atropelar um diálogo que já esteja na tela.
+ */
+function vecBridgeStart(rapido) {
   if (vecBridge.running) return;
 
   var dirs;
@@ -677,8 +893,13 @@ function vecBridgeStart() {
   vecBridge.running = true;
   vecBridge.lastPoll = new Date().getTime();
   vecBridge.startedAt = vecBridge.lastPoll;
-  vecBridge.taskId = app.scheduleTask("vecBridgePoll()", vecBridge.POLL_MS, true);
-  $.global.vecBridgeTaskId = vecBridge.taskId;
+
+  vecBridge.busyUntil = rapido ? vecBridge.lastPoll + vecBridge.BUSY_JANELA : 0;
+  vecBridge.bloqueios = 0;
+  vecBridge.limpos = 0;
+  vecBridge.avisouBloqueio = false;
+  vecBridge.pausadaPorBloqueio = false;
+  vecBridgeAgendarPoll(rapido ? vecBridge.BUSY_MS : vecBridge.IDLE_MS);
 
   // Segunda tarefa, independente: vigia a primeira.
   vecBridge.supervisorId = app.scheduleTask("vecBridgeSupervise()", 5000, true);
@@ -697,7 +918,18 @@ function vecBridgeStart() {
 function vecBridgeAutoStart() {
   if (!vecBridge.autoStart) return;
   vecBridge.autoStart = false;
-  vecBridgeStart();
+
+  if (!vecBridgeLerPref()) {
+    vecBridgeStatus("parada — clique em Iniciar");
+    vecBridgeLog(
+      "não iniciei sozinha: a última escolha foi deixar a ponte parada. Enquanto ela " +
+        "escuta, o After Effects pode recusar rodar outros scripts que abram janela."
+    );
+    return;
+  }
+
+  vecBridgeLog("retomando: a ponte estava escutando quando o After Effects fechou.");
+  vecBridgeStart(false);
 }
 
 function vecBridgeStop() {
@@ -759,6 +991,17 @@ function vecBridgeDiagnostico() {
       " · reanimações: " + vecBridge.revivals +
       " · After Effects " + app.version
   );
+  vecBridgeLog(
+    "ritmo: " + (vecBridge.intervalo / 1000).toFixed(2) + "s entre verificações" +
+      (vecBridge.bloqueios ? " · em recuo por " + vecBridge.bloqueios + " bloqueio(s)" : "")
+  );
+
+  if (vecBridge.pausadaPorBloqueio) {
+    vecBridgeLog(
+      "a ponte se pausou sozinha porque bloqueios seguidos indicam que o After Effects " +
+        "está em uso. Clique em Iniciar quando quiser retomar."
+    );
+  }
 
   if (!vecBridge.running) {
     vecBridgeLog("a ponte está desligada — clique em Iniciar.");
@@ -772,7 +1015,7 @@ function vecBridgeDiagnostico() {
   // clique em Iniciar, `lastPoll` está fresco e o polling parece saudável — mesmo que
   // nenhum ciclo tenha rodado. E é justamente esse o momento em que a pessoa aperta o
   // diagnóstico. Zero ciclo é a evidência que não mente.
-  var espera = vecBridge.POLL_MS * 6;
+  var espera = vecBridge.intervalo * 6 + 1000;
   var desdeInicio = vecBridge.startedAt ? agora - vecBridge.startedAt : 0;
 
   if (vecBridge.cycles === 0) {
@@ -863,8 +1106,12 @@ function vecBridgeDiagnostico() {
       try {
         if (vecBridge.running) {
           vecBridgeStop();
+          // Um Parar clicado vale para as próximas sessões: é a diferença entre um
+          // botão e um interruptor.
+          vecBridgeGravarPref(false);
         } else {
-          vecBridgeStart();
+          vecBridgeStart(true);
+          vecBridgeGravarPref(true);
         }
       } catch (e) {
         try {
@@ -948,7 +1195,9 @@ function vecBridgeDiagnostico() {
   if (vecBridge.running) {
     vecBridgeStatus("ouvindo");
   } else {
-    vecBridgeStatus("aguardando o After Effects terminar de subir…");
+    vecBridgeStatus(
+      vecBridgeLerPref() ? "aguardando o After Effects terminar de subir…" : "parada"
+    );
     $.global.vecBridgeAutoStartId = app.scheduleTask("vecBridgeAutoStart()", 4000, false);
   }
 })(this);

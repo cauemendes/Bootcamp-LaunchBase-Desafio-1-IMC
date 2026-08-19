@@ -301,6 +301,38 @@ Poucos segundos = diálogo na subida do app ou na abertura do projeto. Por isso 
 `uptime` no heartbeat: sem ele, os dois casos dão a mesma mensagem e o conselho vai para o
 lado errado.
 
+### Polling atropela os outros scripts do usuário
+
+Pior consequência da regra acima, e a que mais custa confiança: o After Effects **recusa
+executar script enquanto há diálogo modal esperando resposta**, e recusa mostrando outro
+diálogo — `Cannot run a script while a modal dialog is waiting for response`. Cada ciclo
+de polling é uma execução de script. A 350ms isso são 171 diálogos de erro por minuto de
+diálogo aberto.
+
+O estrago não fica no seu painel. Qualquer script do usuário que abra janela própria —
+Motion, Ease and Wizz, um painel qualquer — fica inutilizável enquanto sua ponte escuta.
+
+Não há como capturar essa recusa: ela acontece antes do seu código. O que dá para fazer é
+medir depois — se o ciclo chegou muito mais tarde que o combinado, houve bloqueio — e
+reagir em três níveis:
+
+1. **Ocioso é lento.** Ninguém está esperando nada; verificar a cada 2s em vez de 350ms
+   corta 85% das colisões de graça. Rápido só numa janela após um comando.
+2. **Recuo exponencial** ao detectar bloqueio, com recuperação de um degrau por vez.
+   Voltar direto ao rápido recria a tempestade, porque o diálogo que bloqueou é
+   normalmente o primeiro de vários.
+3. **Pausa automática** depois de alguns bloqueios seguidos. Bloqueio que insiste significa
+   que tem gente usando o app, e a resposta certa é sair da frente e esperar ser chamada.
+
+O terceiro nível é o que realmente resolve — os dois primeiros só reduzem. E o motivo da
+pausa tem que chegar a quem consome a ponte de fora: "parada" faz um agente mandar
+reiniciar, que é justamente voltar a atrapalhar.
+
+Falta ainda o mais simples: **painel encaixado volta com o workspace**, então auto-iniciar
+significa escutar toda vez que a pessoa abre o app para trabalhar, sem ter pedido. Grave a
+escolha num arquivo e respeite-a na carga. Instalação nova nasce parada; escutar é a opção
+que pode incomodar.
+
 ### Não inicie o polling na carga do painel
 
 Painel encaixado carrega junto com o workspace, durante a subida do After Effects — antes

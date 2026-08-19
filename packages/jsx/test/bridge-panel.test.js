@@ -155,10 +155,18 @@ function fazerArquivos() {
  * Devolve o host para o teste inspecionar, e `carregar()` para simular uma segunda
  * carga do arquivo na mesma engine — que é como nascem dois painéis.
  */
-function abrirAE() {
+function abrirAE({ escutandoAntes = false } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "vec-painel-"));
   const { File, Folder } = fazerArquivos();
   Folder.userData = { fsName: base };
+
+  // A preferência precisa existir antes da carga: é ela que o painel consulta para
+  // decidir se retoma sozinho.
+  if (escutandoAntes) {
+    const pasta = path.join(base, "vectorize-ae", "bridge");
+    fs.mkdirSync(pasta, { recursive: true });
+    fs.writeFileSync(path.join(pasta, "panel-pref.json"), '{"escutando":true}', "utf8");
+  }
 
   const fonte = FONTE_BUNDLE.replace(/^#targetengine.*$/m, "");
 
@@ -269,6 +277,11 @@ function dispararTarefa(host, api, trecho) {
   return t;
 }
 
+/** Liga a ponte pelo caminho real: o clique no botão. */
+function ligar(host, n) {
+  widgetsDo(host, n === undefined ? 0 : n).toggle.onClick();
+}
+
 /** Widgets do painel n, na ordem em que o painel os cria. */
 function widgetsDo(host, n) {
   const win = host.paineis[n];
@@ -286,20 +299,53 @@ const logDe = (w) => w.logBox.text;
 
 // ---------------------------------------------------------------- testes
 
-test("o painel não começa a escutar na carga — só quando a tarefa adiada dispara", () => {
-  // Painel encaixado carrega durante a subida do After Effects, antes de haver projeto
-  // aberto. Escutar ali punha o polling no meio da carga do app.
+test("instalação nova não escuta sozinha, nem depois da tarefa adiada", () => {
+  // Painel encaixado volta com o workspace: abrir o After Effects para trabalhar trazia
+  // a ponte escutando sem ninguém ter pedido — e ponte escutando faz o AE recusar rodar
+  // outros scripts que abram janela. Escutar é a opção que incomoda; tem que ser pedida.
   const host = abrirAE();
   const { status, toggle } = widgetsDo(host, 0);
 
-  assert.equal(host.api.estado.running, false, "a ponte não liga na carga");
-  assert.match(status.text, /aguardando/);
+  assert.equal(host.api.estado.running, false);
   assert.equal(toggle.text, "Iniciar");
+  assert.match(status.text, /parada/);
+
+  dispararTarefa(host, host.api, "vecBridgeAutoStart");
+
+  assert.equal(host.api.estado.running, false, "sem preferência gravada, não escuta");
+  assert.match(widgetsDo(host, 0).status.text, /clique em Iniciar/);
+});
+
+test("a ponte que estava escutando retoma sozinha na sessão seguinte", () => {
+  // É o que mantém um lote noturno vivo se o After Effects reiniciar no meio.
+  const host = abrirAE({ escutandoAntes: true });
+
+  assert.match(widgetsDo(host, 0).status.text, /aguardando/);
+  assert.equal(host.api.estado.running, false, "não escuta durante a subida do app");
 
   dispararTarefa(host, host.api, "vecBridgeAutoStart");
 
   assert.equal(host.api.estado.running, true);
-  assert.equal(toggle.text, "Parar", "o botão acompanha o auto-início");
+  assert.equal(widgetsDo(host, 0).toggle.text, "Parar");
+
+  // No auto-início ninguém está esperando resposta, então começa no ritmo lento: assim
+  // um diálogo que já esteja na tela é atropelado o mínimo possível.
+  assert.equal(host.api.estado.intervalo, host.api.estado.IDLE_MS);
+});
+
+test("Parar clicado vale para as próximas sessões do After Effects", () => {
+  const host = abrirAE({ escutandoAntes: true });
+  dispararTarefa(host, host.api, "vecBridgeAutoStart");
+  assert.equal(host.api.estado.running, true);
+
+  ligar(host); // agora é um Parar
+  assert.equal(host.api.estado.running, false);
+
+  const pref = fs.readFileSync(
+    path.join(host.base, "vectorize-ae", "bridge", "panel-pref.json"),
+    "utf8"
+  );
+  assert.match(pref, /"escutando":false/);
 });
 
 test("com dois painéis abertos, o clique num deles atualiza os dois", () => {
@@ -361,7 +407,7 @@ test("uma segunda carga não zera as contas da ponte já em pé", () => {
   // `var vecBridge = {...}` era refeito a cada carga: `cycles` voltava a zero e
   // `running` voltava a false com o polling ainda agendado.
   const host = abrirAE();
-  dispararTarefa(host, host.api, "vecBridgeAutoStart");
+  ligar(host);
   host.api.poll();
   host.api.poll();
 
@@ -436,7 +482,7 @@ test("um painel morto sai do registro sem impedir os vivos de atualizar", () => 
 
 test("o heartbeat grava running e uptime — é o que separa parada de travada", () => {
   const host = abrirAE();
-  dispararTarefa(host, host.api, "vecBridgeAutoStart");
+  ligar(host);
   host.api.poll();
 
   const ler = () => JSON.parse(fs.readFileSync(path.join(host.base, "vectorize-ae", "bridge", "heartbeat.json"), "utf8"));
@@ -452,12 +498,149 @@ test("o heartbeat grava running e uptime — é o que separa parada de travada",
   assert.equal(parado.running, false, "parar grava o heartbeat final na hora");
 });
 
-test("o supervisor reanima o polling e conta a reanimação", () => {
+/**
+ * Simula um bloqueio da thread principal: o ciclo seguinte chega muito depois do
+ * combinado, que é a única evidência que o painel consegue observar. O After Effects
+ * recusa executar script com diálogo modal na tela, e a recusa acontece antes do nosso
+ * código — não há try/catch que a capture.
+ */
+function bloquear(host, vezes) {
+  const estado = host.api.estado;
+  for (let i = 0; i < vezes; i++) {
+    estado.lastPoll = Date.now() - estado.intervalo * 5 - 2_000;
+    host.api.poll();
+  }
+}
+
+test("a ponte recua o ritmo quando algo bloqueia o After Effects", () => {
+  // ── Por que isto importa mais que a ponte ────────────────────────────────────
+  // Cada verificação é uma execução de script, e o AE recusa rodar script com diálogo
+  // na tela mostrando um erro. A 250ms isso são centenas de diálogos por minuto, e o
+  // estrago cai sobre os outros scripts do usuário — um painel do Motion aberto fica
+  // inutilizável. A ferramenta não pode atrapalhar as ferramentas da pessoa.
   const host = abrirAE();
-  dispararTarefa(host, host.api, "vecBridgeAutoStart");
+  ligar(host);
 
   const estado = host.api.estado;
-  estado.lastPoll = Date.now() - estado.POLL_MS * 10;
+  assert.equal(estado.intervalo, estado.BUSY_MS, "começa rápido, quem ligou está esperando");
+
+  bloquear(host, 1);
+
+  assert.equal(estado.bloqueios, 1);
+  assert.ok(estado.intervalo > estado.BUSY_MS, "recuou");
+  assert.match(widgetsDo(host, 0).logBox.text, /bloqueou a thread/);
+  assert.match(widgetsDo(host, 0).logBox.text, /clique em Parar/);
+});
+
+test("o recuo dobra até o teto, e nunca passa dele", () => {
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  bloquear(host, 1);
+  const primeiro = estado.intervalo;
+
+  bloquear(host, 1);
+  assert.ok(estado.intervalo > primeiro, "dobrou");
+  assert.ok(estado.intervalo <= estado.MAX_MS);
+});
+
+test("bloqueio que insiste faz a ponte sair da frente sozinha", () => {
+  // Recuar não basta: mesmo devagar, cada bloqueio ainda é um erro na tela de quem está
+  // tentando usar outro script. Bloqueio que insiste significa "tem gente usando o AE".
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  bloquear(host, estado.LIMITE_BLOQUEIOS);
+
+  assert.equal(estado.running, false, "a ponte se pausou");
+  assert.equal(estado.pausadaPorBloqueio, true);
+  assert.match(widgetsDo(host, 0).logBox.text, /PAUSEI a ponte/);
+  assert.match(widgetsDo(host, 0).status.text, /ocupado/);
+
+  // E o heartbeat conta o motivo, senão o servidor manda "clique em Iniciar" — que é
+  // exatamente voltar a atrapalhar quem está trabalhando.
+  const hb = JSON.parse(
+    fs.readFileSync(path.join(host.base, "vectorize-ae", "bridge", "heartbeat.json"), "utf8")
+  );
+  assert.equal(hb.running, false);
+  assert.equal(hb.pausadaPorBloqueio, true);
+});
+
+test("clicar em Iniciar depois da pausa devolve a ponte ao ritmo rápido", () => {
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  bloquear(host, estado.LIMITE_BLOQUEIOS);
+  assert.equal(estado.running, false);
+
+  widgetsDo(host, 0).toggle.onClick();
+
+  assert.equal(estado.running, true);
+  assert.equal(estado.bloqueios, 0);
+  assert.equal(estado.pausadaPorBloqueio, false);
+  assert.equal(estado.intervalo, estado.BUSY_MS);
+});
+
+test("ciclos limpos devolvem o ritmo, um degrau por vez", () => {
+  // Voltar direto ao rápido recriaria a tempestade: o diálogo que bloqueou costuma ser
+  // o primeiro de vários, porque a pessoa está usando outro script.
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  bloquear(host, 2);
+  assert.equal(estado.bloqueios, 2);
+
+  for (let i = 0; i < 3; i++) host.api.poll();
+  assert.equal(estado.bloqueios, 1, "um degrau, não a escada toda");
+
+  for (let i = 0; i < 3; i++) host.api.poll();
+  assert.equal(estado.bloqueios, 0);
+  assert.match(widgetsDo(host, 0).logBox.text, /bloqueio passou/);
+});
+
+test("ociosa, a ponte verifica devagar; com comando na fila, rápido", () => {
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  // Passada a janela de trabalho sem comando nenhum, não há ninguém esperando.
+  estado.busyUntil = Date.now() - 1;
+  host.api.poll();
+
+  assert.equal(estado.intervalo, estado.IDLE_MS, "ocioso é lento de propósito");
+
+  // Um comando reabre a janela — rajada de comandos é o caso normal.
+  estado.busyUntil = Date.now() + estado.BUSY_JANELA;
+  host.api.poll();
+
+  assert.equal(estado.intervalo, estado.BUSY_MS);
+});
+
+test("o supervisor não reanima um polling que está apenas em recuo", () => {
+  // Em recuo de 16s, um limite fixo de 1s faria o supervisor cancelar e reagendar a
+  // toda hora — voltando a martelar exatamente quando o objetivo era parar.
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  bloquear(host, 2);
+  estado.lastPoll = Date.now() - estado.intervalo;
+
+  host.api.supervisor();
+
+  assert.equal(estado.revivals, 0);
+});
+
+test("o supervisor reanima o polling e conta a reanimação", () => {
+  const host = abrirAE();
+  ligar(host);
+
+  const estado = host.api.estado;
+  estado.lastPoll = Date.now() - estado.intervalo * 10 - 5_000;
 
   host.api.supervisor();
 

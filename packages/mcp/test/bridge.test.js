@@ -397,6 +397,40 @@ test("diagnose reconhece a assinatura do diálogo na subida", () => {
   assert.doesNotMatch(maisTarde.message, /Parar → Iniciar não resolve/);
 });
 
+test("diagnose trata a pausa por bloqueio como recado, não como defeito", () => {
+  // A ponte se pausa sozinha quando o After Effects está sendo usado. Mandar "clique em
+  // Iniciar" aqui significaria voltar a atrapalhar quem está trabalhando.
+  const dir = tempDir();
+  writeJsonAtomic(path.join(dir, "heartbeat.json"), {
+    at: Date.now() - 60_000,
+    afterEffects: "26.3x87",
+    cycles: 120,
+    running: false,
+    pausadaPorBloqueio: true,
+  });
+
+  const pausada = new Bridge({ dir }).diagnose();
+  assert.equal(pausada.state, "pausada");
+  assert.match(pausada.message, /PAUSOU sozinha/);
+  assert.match(pausada.message, /NÃO fique tentando/);
+});
+
+test("diagnose avisa que a ponte viva pode estar só devagar", () => {
+  const dir = tempDir();
+  writeJsonAtomic(path.join(dir, "heartbeat.json"), {
+    at: Date.now(),
+    afterEffects: "26.3x87",
+    cycles: 90,
+    running: true,
+    intervalo: 16_000,
+  });
+
+  const vivo = new Bridge({ dir }).diagnose();
+  assert.equal(vivo.state, "vivo");
+  assert.match(vivo.message, /RECUO/);
+  assert.match(vivo.message, /timeout maior/);
+});
+
 test("diagnose não estoura com heartbeat corrompido", () => {
   const dir = tempDir();
   fs.writeFileSync(path.join(dir, "heartbeat.json"), "{ lixo", "utf8");

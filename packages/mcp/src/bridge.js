@@ -145,6 +145,25 @@ export class Bridge {
     // Desligado no botão. Estado normal, e o conselho é o mais simples de todos —
     // que só ajuda se não vier embrulhado no alarme de "travou".
     if (dados.running === false) {
+      // A ponte se pausa sozinha quando bloqueios seguidos mostram que o After Effects
+      // está sendo usado — outro script com janela aberta, por exemplo. Mandar "clique
+      // em Iniciar" aqui é o oposto do que a situação pede: significaria voltar a
+      // atrapalhar quem está trabalhando.
+      if (dados.pausadaPorBloqueio) {
+        return {
+          state: "pausada",
+          heartbeat: dados,
+          message:
+            "A ponte se PAUSOU sozinha: o After Effects estava sendo usado por outro " +
+            "script, ou com uma janela esperando resposta, e cada verificação dela " +
+            "virava um erro na tela.\n\n" +
+            "Isto não é defeito e não é para você resolver reiniciando nada. Significa " +
+            "que há uma pessoa usando o After Effects agora.\n\n" +
+            "AÇÃO: pare e avise que a ponte está pausada, e que basta clicar em Iniciar " +
+            "no painel quando o After Effects estiver livre. NÃO fique tentando.",
+        };
+      }
+
       return {
         state: "desligado",
         heartbeat: dados,
@@ -190,6 +209,11 @@ export class Bridge {
       };
     }
 
+    // Em recuo, a ponte pode levar um ciclo inteiro só para notar o arquivo de comando.
+    // Sem dizer isto, um timeout durante o recuo parece ponte morta e manda reiniciar
+    // um painel que está funcionando — só devagar, de propósito.
+    const emRecuo = typeof dados.intervalo === "number" && dados.intervalo > 4_000;
+
     return {
       state: "vivo",
       heartbeat: dados,
@@ -197,8 +221,14 @@ export class Bridge {
         `O painel ESTÁ escutando (sinal há ${idade.toFixed(1)}s, After Effects ` +
         `${dados.afterEffects}, ${dados.cycles ?? "?"} ciclos` +
         (dados.revivals ? `, ${dados.revivals} reanimações do polling` : "") +
-        ") — então ele recebeu o comando e falhou ao responder. O log do painel, dentro " +
-        "do After Effects, mostra o erro exato.",
+        ")" +
+        (emRecuo
+          ? `, mas em RECUO: ${(dados.intervalo / 1000).toFixed(0)}s entre verificações, ` +
+            "porque algo bloqueou o After Effects. Um comando pode demorar esse tempo só " +
+            "para ser notado — tente de novo com timeout maior antes de concluir que " +
+            "há defeito, e considere que pode haver alguém usando o After Effects agora."
+          : " — então ele recebeu o comando e falhou ao responder. O log do painel, " +
+            "dentro do After Effects, mostra o erro exato."),
     };
   }
 

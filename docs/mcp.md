@@ -317,6 +317,37 @@ ninguém ter pedido nada naquele momento.
 
 ---
 
+## A ponte não pode atrapalhar o resto do After Effects
+
+O After Effects recusa executar script enquanto há diálogo modal esperando resposta, e
+recusa mostrando outro diálogo: `Cannot run a script while a modal dialog is waiting for
+response`. Cada verificação da ponte é uma execução de script.
+
+Isso torna uma ponte que escuta incompatível com qualquer outro script do usuário que abra
+janela própria — Motion, Ease and Wizz, um painel qualquer. Não é um incômodo teórico:
+aconteceu, e deixou o Motion inutilizável até a ponte parar.
+
+Três medidas, e só a última resolve de fato:
+
+| Situação | Intervalo | Por quê |
+|---|---|---|
+| Ociosa | 2s | Ninguém está esperando; verificar rápido não adianta nada |
+| Depois de um comando | 250ms, por 1 min | Comando vem em rajada |
+| Bloqueio detectado | dobra até 16s | Recuperação de um degrau por vez, para não recriar a tempestade |
+| 5 bloqueios seguidos | **pausa** | Tem gente usando o app; a ponte sai da frente |
+
+A pausa aparece no heartbeat como `pausadaPorBloqueio`, e `check_bridge` a traduz em
+"há uma pessoa usando o After Effects agora — pare de tentar". Sem esse campo, um agente
+leria "parada" e mandaria reiniciar, que é exatamente voltar a atrapalhar.
+
+## A ponte só escuta se alguém pedir
+
+Painel encaixado volta com o workspace: abrir o After Effects para trabalhar trazia a
+ponte escutando sem escolha nenhuma do usuário. A escolha agora fica gravada em
+`bridge/panel-pref.json`. Um Parar clicado vale para as sessões seguintes; um lote em
+andamento sobrevive a um reinício do aplicativo. Instalação nova nasce parada, porque
+escutar é a opção que pode incomodar.
+
 ## Execução longa sem acompanhamento
 
 Isto foi aprendido perdendo uma noite. Uma fila de 54 cenas ficou oito horas tentando
