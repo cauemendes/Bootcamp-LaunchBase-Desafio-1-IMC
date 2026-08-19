@@ -125,6 +125,14 @@ build_de() {
     echo "ausente"
     return
   fi
+
+  # Distinguir "não consigo ler" de "não tem marca de build" evita mandar alguém
+  # investigar uma instalação corrompida quando o problema é permissão — e permissão
+  # aqui é grave por si só: se este script não lê, o After Effects também não.
+  if [ ! -r "$1" ]; then
+    echo "ILEGÍVEL — sem permissão de leitura"
+    return
+  fi
   grep -m1 -o 'VEC_PANEL_BUILD = [0-9]*' "$1" | grep -o '[0-9]*' || echo "sem marca"
 }
 
@@ -268,6 +276,13 @@ fi
 # mantém um painel velho carregável, e confunde o diagnóstico.
 $SUDO rm -rf "$DESTINO/lib"
 $SUDO cp "$BUNDLE" "$DESTINO/bridge-panel.jsx"
+
+# ── O painel precisa ser legível por quem roda o After Effects ─────────────────
+# O bundle sai de `mktemp`, que cria o arquivo com modo 600 — só o dono lê. Instalando
+# com sudo, o dono passa a ser o root, e o After Effects roda como você: sem esta linha
+# ele pode simplesmente não conseguir abrir o painel, e o sintoma é o pior possível —
+# o arquivo está lá, no caminho certo, com o build certo, e não aparece no menu Window.
+$SUDO chmod 644 "$DESTINO/bridge-panel.jsx"
 
 echo "▸ Instalado (build $BUILD) em:"
 echo "    $DESTINO/bridge-panel.jsx"
