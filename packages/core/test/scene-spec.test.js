@@ -572,3 +572,48 @@ test("cor diferente também não é texto partido", () => {
   const { warnings } = validateScene(cena);
   assert.ok(!warnings.some((w) => /UM texto de duas linhas/.test(w)));
 });
+
+test("texto sem weight avisa que vai sair Regular", () => {
+  // Pedir um estilo inexistente já gerava aviso; não pedir estilo nenhum não gerava, e
+  // a resolução caía em Regular contando como acerto. Um rótulo bold saindo regular,
+  // sem uma linha em lugar nenhum — aconteceu numa reconstrução real.
+  const { warnings } = validateScene({
+    version: SCENE_SPEC_VERSION,
+    canvas: { width: 400, height: 400 },
+    elements: [
+      {
+        id: "rotulo",
+        shape: { type: "text", content: "Broad", x: 200, y: 180, fontSize: 64, fontFamily: "Arial" },
+        fill: { color: "#ffffff" },
+      },
+    ],
+  });
+
+  const aviso = warnings.find((w) => /sem weight/.test(w));
+  assert.ok(aviso);
+  assert.match(aviso, /Regular/);
+});
+
+test("texto com weight declarado não vira ruído", () => {
+  const { warnings } = validateScene({
+    version: SCENE_SPEC_VERSION,
+    canvas: { width: 400, height: 400 },
+    elements: [
+      {
+        id: "rotulo",
+        shape: {
+          type: "text",
+          content: "Broad",
+          x: 200,
+          y: 180,
+          fontSize: 64,
+          fontFamily: "Arial",
+          weight: "Bold",
+        },
+        fill: { color: "#ffffff" },
+      },
+    ],
+  });
+
+  assert.ok(!warnings.some((w) => /sem weight/.test(w)));
+});

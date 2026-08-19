@@ -296,6 +296,20 @@ function validateShape(shape, at, errors, warnings, canvas) {
       if (typeof shape.fontFamily !== "string" || shape.fontFamily === "") {
         warnings.push(`${at}: sem fontFamily — o AE vai usar a fonte padrão`);
       }
+      // ── Por que peso vazio merece aviso ───────────────────────────────────
+      // Pedir um estilo que a fonte não tem gera aviso: o AE cai em Regular e alguém
+      // fica sabendo. Não pedir estilo nenhum não gerava aviso — a resolução escolhe o
+      // primeiro candidato, que é quase sempre Regular, e isso conta como acerto.
+      //
+      // O resultado é um rótulo que era bold saindo regular, sem uma linha em lugar
+      // nenhum. Aconteceu numa reconstrução real, e a diferença salta aos olhos.
+      if (typeof shape.weight !== "string" || shape.weight === "") {
+        warnings.push(
+          `${at}: sem weight — vai sair Regular. Se o texto na imagem parece mais pesado ` +
+            `que o corpo do texto ao redor, escreva "Bold" (ou o peso que for). Chutar o ` +
+            `peso errado é corrigível num clique; sair Regular sem aviso, não.`
+        );
+      }
       break;
     }
   }

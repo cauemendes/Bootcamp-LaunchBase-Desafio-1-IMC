@@ -130,7 +130,14 @@ export const SHAPE_SCHEMA = {
             '"Futura"). String vazia se não conseguir identificar.',
         },
         fontSize: { type: "number", description: "Corpo da fonte em pixels." },
-        weight: { type: "string", description: 'Peso/estilo: "Regular", "Bold", "Light"... Vazio se não souber.' },
+        weight: {
+          type: "string",
+          description:
+            'Peso/estilo: "Regular", "Bold", "Light", "Medium"... Olhe a imagem e decida: ' +
+            "texto de rótulo, botão e título quase sempre é Bold. Deixar vazio NÃO é " +
+            "neutro — o After Effects cai em Regular sem avisar, e um rótulo bold saindo " +
+            "regular salta aos olhos. Chutar errado é um clique para corrigir.",
+        },
         align: { type: "string", enum: ["left", "center", "right"] },
         letterSpacing: { type: "number", description: "Tracking em milésimos de em; 0 se for normal." },
         lineHeight: {
