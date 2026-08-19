@@ -127,31 +127,37 @@ test("stroke e background passam pela mesma resolução", () => {
 
 // ---------------------------------------------------------------- fontes
 
-test("token de fonte traz família e estilo", () => {
+test("token de fonte traz família e peso", () => {
+  // Este teste afirmava `fontStyle`, que não é lido em lugar nenhum do projeto — o
+  // SceneSpec e o ExtendScript usam `weight`. Ele passava enquanto o Bold da marca se
+  // perdia no caminho e o texto saía Regular no After Effects.
+  //
+  // Um teste que afirma o campo errado é pior que teste nenhum: ele dá cobertura
+  // aparente exatamente onde o defeito está, e quem for procurar depois vê verde.
   const { scene, applied } = applyBrand(
     cena([{ shape: { type: "text", x: 0, y: 0, fontSize: 24, content: "oi", fontFamily: "heading" } }]),
     MARCA
   );
 
   assert.equal(scene.elements[0].shape.fontFamily, "ABC Diatype");
-  assert.equal(scene.elements[0].shape.fontStyle, "Bold");
+  assert.equal(scene.elements[0].shape.weight, "Bold");
   assert.equal(applied.fonts, 1);
 });
 
-test("estilo explícito na cena ganha do estilo da marca", () => {
+test("peso explícito na cena ganha do estilo da marca", () => {
   const { scene } = applyBrand(
     cena([
       {
         shape: {
           type: "text", x: 0, y: 0, fontSize: 24, content: "oi",
-          fontFamily: "heading", fontStyle: "Light",
+          fontFamily: "heading", weight: "Light",
         },
       },
     ]),
     MARCA
   );
 
-  assert.equal(scene.elements[0].shape.fontStyle, "Light");
+  assert.equal(scene.elements[0].shape.weight, "Light");
 });
 
 test("família que não é token da marca passa direto", () => {
@@ -341,4 +347,89 @@ test("brandSummary lista os assets disponíveis", () => {
   const texto = brandSummary({ ...MARCA, assets: { logo: "/a/logo.ai", selo: "/a/selo.png" } });
   assert.match(texto, /Assets/);
   assert.match(texto, /logo, selo/);
+});
+
+test("o estilo da fonte da marca chega como weight, não como campo morto", () => {
+  // ── O defeito ────────────────────────────────────────────────────────────────
+  // A marca escrevia o estilo em `fontStyle`, que não é lido em lugar nenhum do
+  // projeto — o SceneSpec e o ExtendScript usam `weight`. Um perfil declarando
+  // { family: "Ember Modern Display", style: "Bold" } entregava a família certa e
+  // perdia o Bold no caminho, sem erro e sem aviso, com o texto saindo Regular.
+  const marca = {
+    name: "Amazon",
+    fonts: { heading: { family: "Ember Modern Display", style: "Bold" } },
+  };
+
+  const { scene } = applyBrand(
+    {
+      version: "1.0",
+      canvas: { width: 400, height: 400 },
+      elements: [
+        {
+          id: "t",
+          shape: { type: "text", content: "Broad", x: 10, y: 20, fontSize: 40, fontFamily: "heading" },
+          fill: { color: "#ffffff" },
+        },
+      ],
+    },
+    marca
+  );
+
+  const texto = scene.elements[0].shape;
+  assert.equal(texto.fontFamily, "Ember Modern Display");
+  assert.equal(texto.weight, "Bold");
+});
+
+test("o peso do elemento vence o da marca", () => {
+  // Quando o elemento declara um peso, foi alguém olhando aquele texto específico.
+  const marca = {
+    name: "Amazon",
+    fonts: { heading: { family: "Ember Modern Display", style: "Bold" } },
+  };
+
+  const { scene } = applyBrand(
+    {
+      version: "1.0",
+      canvas: { width: 400, height: 400 },
+      elements: [
+        {
+          id: "t",
+          shape: {
+            type: "text",
+            content: "corpo",
+            x: 10,
+            y: 20,
+            fontSize: 20,
+            fontFamily: "heading",
+            weight: "Regular",
+          },
+          fill: { color: "#ffffff" },
+        },
+      ],
+    },
+    marca
+  );
+
+  assert.equal(scene.elements[0].shape.weight, "Regular");
+});
+
+test("marca sem estilo declarado não inventa peso", () => {
+  const marca = { name: "X", fonts: { corpo: { family: "Helvetica" } } };
+
+  const { scene } = applyBrand(
+    {
+      version: "1.0",
+      canvas: { width: 400, height: 400 },
+      elements: [
+        {
+          id: "t",
+          shape: { type: "text", content: "a", x: 1, y: 2, fontSize: 12, fontFamily: "corpo" },
+          fill: { color: "#ffffff" },
+        },
+      ],
+    },
+    marca
+  );
+
+  assert.equal(scene.elements[0].shape.weight, undefined);
 });

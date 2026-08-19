@@ -193,6 +193,11 @@ marca configurada, escreva o nome no lugar do hexadecimal:
 "shape": { "type": "text", "fontFamily": "heading", "…": "…" }
 \`\`\`
 
+O token de fonte também traz o **peso** definido no perfil. Marcas costumam usar bold em
+quase todo rótulo — quando o perfil declara \`{ family: "Ember Modern Display", style:
+"Bold" }\`, o texto sai bold sem você repetir isso em cada elemento. Declarar \`weight\` no
+elemento continua vencendo, para o caso de um texto específico ser diferente do padrão.
+
 Vale por dois motivos: o hex que você mede num print é o que a compressão deixou, não
 o que a marca especifica; e um SceneSpec com nomes sobrevive à troca de cliente. Se
 você escrever o hex medido mesmo assim, uma cor próxima de uma cor da marca é

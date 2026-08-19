@@ -278,11 +278,22 @@ export function applyBrand(scene, brand, { snapColors = true } = {}) {
       const achado = b.fonts.get(pedida.toLowerCase());
       if (achado) {
         applied.fonts++;
-        return {
-          ...shape,
-          fontFamily: achado.family,
-          fontStyle: shape.fontStyle ?? achado.style ?? undefined,
-        };
+
+        // ── O estilo da marca ia para `fontStyle`, que ninguém lê ─────────────
+        // O SceneSpec e o ExtendScript usam `weight`. `fontStyle` não é lido em lugar
+        // nenhum do projeto, então um perfil declarando `{ family: "Ember Modern
+        // Display", style: "Bold" }` entregava a família certa e perdia o Bold no
+        // caminho — sem erro, sem aviso, e o texto saindo Regular.
+        //
+        // O elemento tem prioridade: quando ele declara um peso, foi alguém olhando
+        // aquele texto específico. O da marca preenche o silêncio, que é o caso comum —
+        // marcas como a Amazon usam bold em quase todo rótulo, e repetir isso em cada
+        // elemento é convite para esquecer em um deles.
+        const weight = shape.weight || achado.style || undefined;
+
+        return weight === undefined
+          ? { ...shape, fontFamily: achado.family }
+          : { ...shape, fontFamily: achado.family, weight };
       }
       // Uma família de verdade (não um token) passa direto: o designer pode querer
       // uma fonte que não está na marca, e o AE resolve ou substitui com aviso.
