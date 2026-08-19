@@ -89,7 +89,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 6;
+var VEC_PANEL_BUILD = 7;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
@@ -105,6 +105,8 @@ if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SC
     log: [],
     lastHeartbeat: 0,
     lastPoll: 0,
+    // Fim do último ciclo. Régua do bloqueio — ver `vecBridgePoll`.
+    lastEnd: 0,
     cycles: 0,
     supervisorId: null,
     revivals: 0,
@@ -136,7 +138,12 @@ if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SC
     BUSY_MS: 250,
     MAX_MS: 16000,
     // Bloqueios seguidos que fazem a ponte sair da frente de vez. Ver `vecBridgeRitmo`.
-    LIMITE_BLOQUEIOS: 5,
+    //
+    // Três, e não cinco: cada bloqueio é um diálogo de erro na tela de quem está
+    // tentando usar outro script, então o número é literalmente quantos erros a pessoa
+    // vê antes de a ponte sumir. Cinco só se justificava enquanto um comando demorado
+    // podia ser confundido com bloqueio — o que a régua do `lastEnd` resolveu.
+    LIMITE_BLOQUEIOS: 3,
     pausadaPorBloqueio: false,
     // Depois de um comando, vale continuar rápido por um tempo: uma conversa com o
     // servidor manda dezenas de comandos seguidos, não um isolado.
@@ -670,9 +677,16 @@ function vecBridgePoll() {
   // ── Como se detecta que houve bloqueio ──────────────────────────────────────
   // O After Effects recusa executar script com diálogo modal na tela, e a recusa
   // acontece antes do nosso código: não há try/catch que a capture. O que sobra é
-  // medir depois. Se o ciclo demorou muito mais que o combinado, alguém segurou a
+  // medir depois. Se o ciclo chegou muito mais tarde que o combinado, alguém segurou a
   // thread principal — e a única coisa útil a fazer é passar a incomodar menos.
-  var atraso = vecBridge.lastPoll ? agora - vecBridge.lastPoll : 0;
+  //
+  // A medida sai do FIM do ciclo anterior, não do início dele. A diferença não é
+  // detalhe: um `build_scene` de quarenta segundos roda dentro de um ciclo, e medido do
+  // início ele apareceria como quarenta segundos de atraso — um bloqueio inventado a
+  // cada comando demorado. Num lote de dezenas de cenas isso pausaria a ponte sozinha,
+  // no meio do trabalho, dizendo que o After Effects estava ocupado por causa do
+  // trabalho que ela mesma estava fazendo.
+  var atraso = vecBridge.lastEnd ? agora - vecBridge.lastEnd : 0;
 
   if (atraso > vecBridge.intervalo * 4 + 1000) {
     vecBridge.bloqueios++;
@@ -694,6 +708,12 @@ function vecBridgePoll() {
       vecBridgeLog("erro no ciclo de polling (a ponte continua): " + vecBridgeMotivo(e));
     } catch (e2) {}
   }
+
+  // Os dois carimbos de saída. `lastEnd` é a régua do bloqueio; `lastPoll` também é
+  // atualizado aqui porque, sem isso, um comando demorado faria o supervisor concluir
+  // que o polling morreu e reanimar um polling que estava só trabalhando.
+  vecBridge.lastEnd = new Date().getTime();
+  vecBridge.lastPoll = vecBridge.lastEnd;
 
   // Depois do trabalho, nunca antes: se o ritmo mudar, esta tarefa é cancelada e
   // substituída, e o que vier depois da troca não roda.
@@ -936,6 +956,7 @@ function vecBridgeStart(rapido) {
   vecBridge.running = true;
   vecBridge.lastPoll = new Date().getTime();
   vecBridge.startedAt = vecBridge.lastPoll;
+  vecBridge.lastEnd = vecBridge.lastPoll;
 
   vecBridge.busyUntil = rapido ? vecBridge.lastPoll + vecBridge.BUSY_JANELA : 0;
   vecBridge.bloqueios = 0;

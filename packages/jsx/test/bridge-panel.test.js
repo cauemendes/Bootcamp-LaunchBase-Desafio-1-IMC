@@ -578,7 +578,8 @@ test("o heartbeat grava running e uptime — é o que separa parada de travada",
 function bloquear(host, vezes) {
   const estado = host.api.estado;
   for (let i = 0; i < vezes; i++) {
-    estado.lastPoll = Date.now() - estado.intervalo * 5 - 2_000;
+    // `lastEnd`, não `lastPoll`: o atraso é medido do fim do ciclo anterior.
+    estado.lastEnd = Date.now() - estado.intervalo * 5 - 2_000;
     host.api.poll();
   }
 }
@@ -601,6 +602,43 @@ test("a ponte recua o ritmo quando algo bloqueia o After Effects", () => {
   assert.ok(estado.intervalo > estado.BUSY_MS, "recuou");
   assert.match(widgetsDo(host, 0).logBox.text, /bloqueou a thread/);
   assert.match(widgetsDo(host, 0).logBox.text, /clique em Parar/);
+});
+
+test("comando demorado não é confundido com bloqueio", () => {
+  // ── O defeito que isto trava ─────────────────────────────────────────────────
+  // O atraso era medido do início do ciclo anterior. Um `build_scene` de quarenta
+  // segundos roda DENTRO de um ciclo, então aparecia como quarenta segundos de atraso —
+  // um bloqueio inventado a cada comando demorado. Num lote de dezenas de cenas a ponte
+  // se pausaria sozinha no meio do trabalho, alegando que o After Effects estava ocupado
+  // por causa do trabalho que ela mesma estava fazendo.
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  // Simula o ciclo que levou 40s: começou muito antes, terminou agora.
+  estado.lastPoll = Date.now() - 40_000;
+  estado.lastEnd = Date.now();
+
+  host.api.poll();
+
+  assert.equal(estado.bloqueios, 0, "trabalho não é bloqueio");
+  assert.equal(estado.running, true);
+});
+
+test("o supervisor não reanima durante um comando demorado", () => {
+  // `lastPoll` também é carimbado no fim do ciclo. Sem isso, um comando de 40s deixava o
+  // carimbo velho e o supervisor concluía que o polling havia morrido.
+  const host = abrirAE();
+  ligar(host);
+  const estado = host.api.estado;
+
+  estado.lastPoll = Date.now() - 40_000;
+  estado.lastEnd = Date.now() - 40_000;
+  host.api.poll();
+
+  host.api.supervisor();
+
+  assert.equal(estado.revivals, 0);
 });
 
 test("o recuo dobra até o teto, e nunca passa dele", () => {

@@ -324,6 +324,12 @@ reagir em três níveis:
 3. **Pausa automática** depois de alguns bloqueios seguidos. Bloqueio que insiste significa
    que tem gente usando o app, e a resposta certa é sair da frente e esperar ser chamada.
 
+Meça o atraso do **fim** do ciclo anterior, não do início. Um comando de quarenta segundos
+roda dentro de um ciclo; medido do início, ele aparece como quarenta segundos de atraso — um
+bloqueio inventado a cada operação demorada, e a ponte se pausando sozinha no meio de um
+lote por causa do trabalho que ela mesma está fazendo. Carimbe o fim também para o
+supervisor, senão ele reanima um polling que estava só trabalhando.
+
 O terceiro nível é o que realmente resolve — os dois primeiros só reduzem. E o motivo da
 pausa tem que chegar a quem consome a ponte de fora: "parada" faz um agente mandar
 reiniciar, que é justamente voltar a atrapalhar.
