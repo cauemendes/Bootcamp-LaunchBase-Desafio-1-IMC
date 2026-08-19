@@ -84,6 +84,11 @@ build_de() {
   grep -m1 -o 'VEC_PANEL_BUILD = [0-9]*' "$1" | grep -o '[0-9]*' || echo "sem marca"
 }
 
+# Preenchido quando a cópia concorrente existe e não pôde ser removida. O relatório
+# precisa disso: mandar "rode sem --app" para quem já rodou sem --app é o pior tipo de
+# conselho, porque parece uma instrução e é um beco.
+REMOVER_A_MAO=""
+
 relatar() {
   echo ""
   echo "▸ Cópias do painel encontradas:"
@@ -97,13 +102,25 @@ relatar() {
 
   ⚠️  DUAS CÓPIAS INSTALADAS.
 
-      O After Effects vai carregar uma delas e você não tem como saber qual. Se as
-      duas tiverem builds diferentes, todo defeito já corrigido pode reaparecer sem
-      que nada aponte para a causa — conferir o arquivo dá certo enquanto o
-      aplicativo carrega o outro.
-
-      Apague uma. Rode este script sem --app para ficar só com a do usuário.
+      O After Effects vai carregar uma delas e você não tem como saber qual. Enquanto
+      os builds forem iguais isso é inofensivo; assim que divergirem, todo defeito já
+      corrigido pode reaparecer sem que nada aponte para a causa — conferir o arquivo
+      dá certo enquanto o aplicativo carrega o outro.
 AVISO
+
+    if [ -n "$REMOVER_A_MAO" ]; then
+      cat <<AVISO
+
+      A cópia do aplicativo está numa pasta do sistema e este script não tem permissão
+      para apagá-la. Rode isto no Terminal.app e a duplicata acaba:
+
+        sudo rm -f "$DIR_APP/bridge-panel.jsx"
+        sudo rm -rf "$DIR_APP/lib"
+AVISO
+    else
+      echo ""
+      echo "      Apague uma. Rode este script sem --app para ficar só com a do usuário."
+    fi
   fi
 }
 
@@ -177,19 +194,23 @@ if [ -f "$OUTRO/bridge-panel.jsx" ]; then
     rm -rf "$OUTRO/lib" 2>/dev/null || true
     echo "    removida — agora há uma instalação só."
   else
-    echo "    Não consegui remover (a pasta é do sistema). Rode no Terminal.app:"
-    echo ""
-    echo "      sudo rm -f \"$OUTRO/bridge-panel.jsx\""
-    echo "      sudo rm -rf \"$OUTRO/lib\""
-    echo ""
+    REMOVER_A_MAO="sim"
+    echo "    Não consegui remover: a pasta é do sistema e exige administrador."
   fi
 fi
 
 relatar
 
-cat <<'EOF'
+if [ -n "$REMOVER_A_MAO" ]; then
+  echo ""
+  echo "✓ Painel instalado — mas FALTA apagar a cópia duplicada, com os dois comandos"
+  echo "  acima. Sem isso o After Effects pode continuar carregando o painel antigo."
+else
+  echo ""
+  echo "✓ Painel instalado."
+fi
 
-✓ Painel instalado.
+cat <<'EOF'
 
   FALTA UM PASSO, e sem ele a ponte não funciona:
 

@@ -4,18 +4,18 @@
  * GERADO AUTOMATICAMENTE — não edite este arquivo.
  *
  * Produzido por scripts/bundle-jsx.mjs a partir de:
- *   packages/jsx/bridge-panel.jsx
- *   packages/jsx/lib/tools.jsx
- *   packages/jsx/lib/util.jsx
- *   packages/jsx/lib/ae-shape.jsx
- *   packages/jsx/lib/ae-font.jsx
- *   packages/jsx/lib/ae-text.jsx
- *   packages/jsx/lib/ae-read.jsx
- *   packages/jsx/lib/ae-frame.jsx
- *   packages/jsx/lib/ae-anim.jsx
- *   packages/jsx/lib/ae-image.jsx
- *   packages/jsx/lib/ae-sequence.jsx
- *   packages/jsx/lib/build-scene.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/bridge-panel.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/tools.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/util.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-shape.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-font.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-text.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-read.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-frame.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-anim.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-image.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-sequence.jsx
+ *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/build-scene.jsx
  *
  * Edite os originais em packages/jsx/ e rode a instalação de novo.
  */
