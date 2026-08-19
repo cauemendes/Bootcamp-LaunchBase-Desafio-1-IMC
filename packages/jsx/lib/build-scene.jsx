@@ -50,39 +50,6 @@ function vecBuildSceneFromFile(specPath) {
  * @param {Object} scene    SceneSpec normalizado (saída de normalizeScene)
  * @param {Object} options  { compName, gamma, recenterAnchors, reuseComp }
  */
-/**
- * Silencia diálogos do After Effects durante uma operação longa.
- *
- * Diálogo modal congela a thread principal, que é a mesma que roda o polling do
- * painel. Com alguém na frente da máquina isso é um clique; numa execução noturna é a
- * ponte parada até de manhã, com o resto da fila perdido.
- *
- * O que costuma abrir sem ser chamado: substituição de fonte, footage faltando,
- * confirmação de tamanho de comp. Nenhum deles precisa de resposta para o trabalho
- * seguir.
- *
- * Envolvido em try/catch porque isto é proteção, não função: se a API mudar de nome
- * numa versão futura, o pior resultado aceitável é ficar sem a proteção — nunca
- * derrubar a operação que ela deveria proteger.
- */
-function vecSilenciarDialogos() {
-  try {
-    app.beginSuppressDialogs();
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function vecRestaurarDialogos(silenciado) {
-  if (!silenciado) return;
-  try {
-    // `false`: não despejar os alertas acumulados no fim. Eles não seriam lidos por
-    // ninguém e ainda travariam o painel na saída.
-    app.endSuppressDialogs(false);
-  } catch (e) {}
-}
-
 function vecBuildScene(scene, options) {
   var warnings = [];
 
@@ -98,7 +65,7 @@ function vecBuildScene(scene, options) {
   // Um único grupo de undo para a cena inteira: o usuário desfaz com um Ctrl+Z, e
   // não com um por camada.
   app.beginUndoGroup("Vectorize AE - " + compName);
-  var silenciado = vecSilenciarDialogos();
+  var silenciado = vec.suppressDialogs();
 
   try {
     var comp = vecResolveComp(scene.canvas, compName, options);
@@ -154,7 +121,7 @@ function vecBuildScene(scene, options) {
   } catch (e) {
     return { ok: false, error: vecDescribeError(e), warnings: warnings };
   } finally {
-    vecRestaurarDialogos(silenciado);
+    vec.restoreDialogs(silenciado);
     app.endUndoGroup();
   }
 }

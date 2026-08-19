@@ -79,7 +79,8 @@ function vecSnapToFrame(comp, time) {
   var alinhado = Math.round(time / passo) * passo;
 
   // O último frame da comp é `duration - frameDuration`; pedir `duration` devolve
-  // um span vazio e a fila renderiza nada, sem reclamar.
+  // um span vazio e a fila renderiza nada, sem reclamar. `time` aqui é relativo ao
+  // início da comp (base zero) — quem soma `displayStartTime` é a fila de render.
   var ultimo = comp.duration - passo;
   if (alinhado > ultimo) alinhado = ultimo;
   if (alinhado < 0) alinhado = 0;
@@ -214,7 +215,17 @@ function vecSaveFrameViaQueue(comp, time, destino) {
 
   try {
     item = fila.items.add(comp);
-    item.timeSpanStart = time;
+
+    // `timeSpanStart` é no TEMPO DE EXIBIÇÃO da comp, não em zero.
+    //
+    // Uma comp com `displayStartTime` de 137,71s — coisa normal quando ela veio de uma
+    // sequência maior — recebia `timeSpanStart = 4,79` e o After Effects abria um aviso:
+    // "will cause render to have frames outside of range". Aviso é diálogo modal, e
+    // diálogo modal congela a thread do polling: a ponte "perdia conexão" e a culpa
+    // parecia ser da ponte.
+    var inicioAbsoluto = comp.displayStartTime + time;
+
+    item.timeSpanStart = inicioAbsoluto;
     item.timeSpanDuration = comp.frameDuration;
 
     var om = item.outputModule(1);
@@ -274,7 +285,19 @@ function vecSaveFrameViaQueue(comp, time, destino) {
  */
 vec.saveFrame = function (comp, time, destino) {
   var alinhado = vecSnapToFrame(comp, time);
+  // A fila de render é a operação mais propensa a diálogo de todo o projeto, e era a
+  // única sem esta proteção. Foi por aqui que um aviso de intervalo de tempo derrubou
+  // a ponte no meio de uma tarefa.
+  var silenciado = vec.suppressDialogs();
 
+  try {
+    return vecSaveFrameInterno(comp, alinhado, destino);
+  } finally {
+    vec.restoreDialogs(silenciado);
+  }
+};
+
+function vecSaveFrameInterno(comp, alinhado, destino) {
   if (typeof comp.saveFrameToPng === "function") {
     try {
       comp.saveFrameToPng(alinhado, destino);
@@ -290,4 +313,4 @@ vec.saveFrame = function (comp, time, destino) {
   }
 
   return { file: vecSaveFrameViaQueue(comp, alinhado, destino), method: "renderQueue", time: alinhado };
-};
+}

@@ -277,6 +277,29 @@ Ao colocar arte vetorial, ligue `layer.collapseTransformation = true`. É a rast
 contínua: sem ela, um `.ai` colocado a 40% e depois ampliado sai borrado. No logo do
 cliente isso é o tipo de detalhe que ninguém perdoa.
 
+## Diálogo modal: o script não consegue fechar
+
+Não existe jeito de clicar em OK por script. Para clicar, o script precisaria rodar — e
+a thread que o executaria é exatamente a que o modal bloqueou. **A única defesa é
+impedir que ele apareça**, com `app.beginSuppressDialogs()` em volta da operação.
+
+Num painel que faz polling isso não é detalhe: um aviso na tela congela a ponte, e o
+sintoma que chega ao usuário é "perdi a conexão" — apontando para o lugar errado.
+
+## `timeSpanStart` da fila de render é em tempo de exibição
+
+`comp.displayStartTime` não é zero quando a comp veio de uma sequência maior. A fila de
+render espera `timeSpanStart` **absoluto nessa régua**, não relativo ao início da comp:
+
+```javascript
+item.timeSpanStart = comp.displayStartTime + tempoRelativo;
+item.timeSpanDuration = comp.frameDuration;
+```
+
+Errando isso, o AE abre "will cause render to have frames outside of range" — que é um
+diálogo modal, com a consequência do parágrafo anterior. Numa comp com
+`displayStartTime` de 137s foi assim que a ponte caiu no meio de uma tarefa.
+
 ## `scheduleTask` morre se a função lançar
 
 `app.scheduleTask(codigo, ms, true)` repete até `cancelTask` — **ou até uma exceção

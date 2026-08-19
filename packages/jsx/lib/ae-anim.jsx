@@ -199,7 +199,7 @@ vec.applyAnimation = function (tracks, options) {
   var keyframes = 0;
 
   app.beginUndoGroup("Vectorize AE - animation");
-  var silenciado = vecSilenciarDialogos();
+  var silenciado = vec.suppressDialogs();
 
   try {
     for (var i = 0; i < tracks.length; i++) {
@@ -225,7 +225,7 @@ vec.applyAnimation = function (tracks, options) {
       }
     }
   } finally {
-    vecRestaurarDialogos(silenciado);
+    vec.restoreDialogs(silenciado);
     app.endUndoGroup();
   }
 

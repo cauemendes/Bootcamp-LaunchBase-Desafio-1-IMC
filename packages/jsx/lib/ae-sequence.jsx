@@ -81,7 +81,7 @@ vec.buildSequence = function (plan, options) {
   var nome = vec.safeName(plan.name, "Master");
 
   app.beginUndoGroup("Vectorize AE - " + nome);
-  var silenciado = vecSilenciarDialogos();
+  var silenciado = vec.suppressDialogs();
 
   try {
     var existente = vecAcharComp(nome);
@@ -181,7 +181,7 @@ vec.buildSequence = function (plan, options) {
       warnings: avisos,
     };
   } finally {
-    vecRestaurarDialogos(silenciado);
+    vec.restoreDialogs(silenciado);
     app.endUndoGroup();
   }
 };

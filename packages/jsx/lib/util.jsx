@@ -16,7 +16,7 @@
  * null, array e objeto simples.
  */
 
-/*global File*/
+/*global app, File*/
 
 var vec = vec || {};
 
@@ -96,6 +96,40 @@ vec.quote = function (str) {
   }
 
   return out + '"';
+};
+
+/**
+ * Silencia diálogos do After Effects durante uma operação longa.
+ *
+ * ── Por que isto é crítico e não cosmético ────────────────────────────────────
+ * Diálogo modal congela a thread principal do After Effects, que é a mesma que roda o
+ * polling do painel da ponte. E o script **não tem como fechar o diálogo**: para
+ * clicar em OK ele precisaria rodar, e a thread que o executaria é exatamente a que
+ * está bloqueada. Não existe saída por dentro — só evitar que o diálogo apareça.
+ *
+ * O que abre sem ser chamado: substituição de fonte, footage faltando, avisos da fila
+ * de render sobre intervalo de tempo. Nenhum precisa de resposta para o trabalho
+ * seguir, e qualquer um deles derruba uma execução sem ninguém na frente da máquina.
+ *
+ * Em try/catch porque isto é proteção, não função: se a API mudar de nome, o pior
+ * resultado aceitável é ficar sem a proteção — nunca derrubar o que ela protegia.
+ */
+vec.suppressDialogs = function () {
+  try {
+    app.beginSuppressDialogs();
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+vec.restoreDialogs = function (silenciado) {
+  if (!silenciado) return;
+  try {
+    // `false`: não despejar os alertas acumulados no fim. Eles não seriam lidos por
+    // ninguém e ainda travariam o painel justamente na saída.
+    app.endSuppressDialogs(false);
+  } catch (e) {}
 };
 
 /** Lê um arquivo UTF-8 inteiro. Devolve null se não der pra abrir. */

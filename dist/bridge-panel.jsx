@@ -77,7 +77,7 @@
  * null, array e objeto simples.
  */
 
-/*global File*/
+/*global app, File*/
 
 var vec = vec || {};
 
@@ -157,6 +157,40 @@ vec.quote = function (str) {
   }
 
   return out + '"';
+};
+
+/**
+ * Silencia diálogos do After Effects durante uma operação longa.
+ *
+ * ── Por que isto é crítico e não cosmético ────────────────────────────────────
+ * Diálogo modal congela a thread principal do After Effects, que é a mesma que roda o
+ * polling do painel da ponte. E o script **não tem como fechar o diálogo**: para
+ * clicar em OK ele precisaria rodar, e a thread que o executaria é exatamente a que
+ * está bloqueada. Não existe saída por dentro — só evitar que o diálogo apareça.
+ *
+ * O que abre sem ser chamado: substituição de fonte, footage faltando, avisos da fila
+ * de render sobre intervalo de tempo. Nenhum precisa de resposta para o trabalho
+ * seguir, e qualquer um deles derruba uma execução sem ninguém na frente da máquina.
+ *
+ * Em try/catch porque isto é proteção, não função: se a API mudar de nome, o pior
+ * resultado aceitável é ficar sem a proteção — nunca derrubar o que ela protegia.
+ */
+vec.suppressDialogs = function () {
+  try {
+    app.beginSuppressDialogs();
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+vec.restoreDialogs = function (silenciado) {
+  if (!silenciado) return;
+  try {
+    // `false`: não despejar os alertas acumulados no fim. Eles não seriam lidos por
+    // ninguém e ainda travariam o painel justamente na saída.
+    app.endSuppressDialogs(false);
+  } catch (e) {}
 };
 
 /** Lê um arquivo UTF-8 inteiro. Devolve null se não der pra abrir. */
@@ -1446,7 +1480,8 @@ function vecSnapToFrame(comp, time) {
   var alinhado = Math.round(time / passo) * passo;
 
   // O último frame da comp é `duration - frameDuration`; pedir `duration` devolve
-  // um span vazio e a fila renderiza nada, sem reclamar.
+  // um span vazio e a fila renderiza nada, sem reclamar. `time` aqui é relativo ao
+  // início da comp (base zero) — quem soma `displayStartTime` é a fila de render.
   var ultimo = comp.duration - passo;
   if (alinhado > ultimo) alinhado = ultimo;
   if (alinhado < 0) alinhado = 0;
@@ -1581,7 +1616,17 @@ function vecSaveFrameViaQueue(comp, time, destino) {
 
   try {
     item = fila.items.add(comp);
-    item.timeSpanStart = time;
+
+    // `timeSpanStart` é no TEMPO DE EXIBIÇÃO da comp, não em zero.
+    //
+    // Uma comp com `displayStartTime` de 137,71s — coisa normal quando ela veio de uma
+    // sequência maior — recebia `timeSpanStart = 4,79` e o After Effects abria um aviso:
+    // "will cause render to have frames outside of range". Aviso é diálogo modal, e
+    // diálogo modal congela a thread do polling: a ponte "perdia conexão" e a culpa
+    // parecia ser da ponte.
+    var inicioAbsoluto = comp.displayStartTime + time;
+
+    item.timeSpanStart = inicioAbsoluto;
     item.timeSpanDuration = comp.frameDuration;
 
     var om = item.outputModule(1);
@@ -1641,7 +1686,19 @@ function vecSaveFrameViaQueue(comp, time, destino) {
  */
 vec.saveFrame = function (comp, time, destino) {
   var alinhado = vecSnapToFrame(comp, time);
+  // A fila de render é a operação mais propensa a diálogo de todo o projeto, e era a
+  // única sem esta proteção. Foi por aqui que um aviso de intervalo de tempo derrubou
+  // a ponte no meio de uma tarefa.
+  var silenciado = vec.suppressDialogs();
 
+  try {
+    return vecSaveFrameInterno(comp, alinhado, destino);
+  } finally {
+    vec.restoreDialogs(silenciado);
+  }
+};
+
+function vecSaveFrameInterno(comp, alinhado, destino) {
   if (typeof comp.saveFrameToPng === "function") {
     try {
       comp.saveFrameToPng(alinhado, destino);
@@ -1657,7 +1714,7 @@ vec.saveFrame = function (comp, time, destino) {
   }
 
   return { file: vecSaveFrameViaQueue(comp, alinhado, destino), method: "renderQueue", time: alinhado };
-};
+}
 
 // ── ae-anim.jsx ──
 /**
@@ -1861,7 +1918,7 @@ vec.applyAnimation = function (tracks, options) {
   var keyframes = 0;
 
   app.beginUndoGroup("Vectorize AE - animation");
-  var silenciado = vecSilenciarDialogos();
+  var silenciado = vec.suppressDialogs();
 
   try {
     for (var i = 0; i < tracks.length; i++) {
@@ -1887,7 +1944,7 @@ vec.applyAnimation = function (tracks, options) {
       }
     }
   } finally {
-    vecRestaurarDialogos(silenciado);
+    vec.restoreDialogs(silenciado);
     app.endUndoGroup();
   }
 
@@ -2179,7 +2236,7 @@ vec.buildSequence = function (plan, options) {
   var nome = vec.safeName(plan.name, "Master");
 
   app.beginUndoGroup("Vectorize AE - " + nome);
-  var silenciado = vecSilenciarDialogos();
+  var silenciado = vec.suppressDialogs();
 
   try {
     var existente = vecAcharComp(nome);
@@ -2279,7 +2336,7 @@ vec.buildSequence = function (plan, options) {
       warnings: avisos,
     };
   } finally {
-    vecRestaurarDialogos(silenciado);
+    vec.restoreDialogs(silenciado);
     app.endUndoGroup();
   }
 };
@@ -2341,39 +2398,6 @@ function vecBuildSceneFromFile(specPath) {
  * @param {Object} scene    SceneSpec normalizado (saída de normalizeScene)
  * @param {Object} options  { compName, gamma, recenterAnchors, reuseComp }
  */
-/**
- * Silencia diálogos do After Effects durante uma operação longa.
- *
- * Diálogo modal congela a thread principal, que é a mesma que roda o polling do
- * painel. Com alguém na frente da máquina isso é um clique; numa execução noturna é a
- * ponte parada até de manhã, com o resto da fila perdido.
- *
- * O que costuma abrir sem ser chamado: substituição de fonte, footage faltando,
- * confirmação de tamanho de comp. Nenhum deles precisa de resposta para o trabalho
- * seguir.
- *
- * Envolvido em try/catch porque isto é proteção, não função: se a API mudar de nome
- * numa versão futura, o pior resultado aceitável é ficar sem a proteção — nunca
- * derrubar a operação que ela deveria proteger.
- */
-function vecSilenciarDialogos() {
-  try {
-    app.beginSuppressDialogs();
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-function vecRestaurarDialogos(silenciado) {
-  if (!silenciado) return;
-  try {
-    // `false`: não despejar os alertas acumulados no fim. Eles não seriam lidos por
-    // ninguém e ainda travariam o painel na saída.
-    app.endSuppressDialogs(false);
-  } catch (e) {}
-}
-
 function vecBuildScene(scene, options) {
   var warnings = [];
 
@@ -2389,7 +2413,7 @@ function vecBuildScene(scene, options) {
   // Um único grupo de undo para a cena inteira: o usuário desfaz com um Ctrl+Z, e
   // não com um por camada.
   app.beginUndoGroup("Vectorize AE - " + compName);
-  var silenciado = vecSilenciarDialogos();
+  var silenciado = vec.suppressDialogs();
 
   try {
     var comp = vecResolveComp(scene.canvas, compName, options);
@@ -2445,7 +2469,7 @@ function vecBuildScene(scene, options) {
   } catch (e) {
     return { ok: false, error: vecDescribeError(e), warnings: warnings };
   } finally {
-    vecRestaurarDialogos(silenciado);
+    vec.restoreDialogs(silenciado);
     app.endUndoGroup();
   }
 }
