@@ -105,6 +105,36 @@ $SUDO cp "$BUNDLE" "$PANELS_DIR/bridge-panel.jsx"
 
 echo "▸ Instalado em: $PANELS_DIR/bridge-panel.jsx"
 
+# ---- cópias duplicadas -------------------------------------------------------
+#
+# O After Effects carrega painéis de DUAS pastas: a de dentro do pacote do
+# aplicativo, que é a que este script usa, e uma por usuário em
+# ~/Library/Application Support. Uma cópia velha na segunda continua aparecendo no
+# menu Window e continua carregável.
+#
+# Isso produz o diagnóstico mais caro que este projeto já teve. Você copia o arquivo
+# novo, confere o número de build no arquivo copiado, ele está certo — e o After
+# Effects carrega o outro. Todo defeito já corrigido reaparece, e a leitura natural
+# ("a correção está errada") é falsa. Não há sintoma que aponte para cá.
+USER_PANELS="$HOME/Library/Application Support/Adobe/$(basename "$AE_APP")/Scripts/ScriptUI Panels"
+DUPLICATA="$USER_PANELS/bridge-panel.jsx"
+
+if [ -f "$DUPLICATA" ]; then
+  BUILD_DUP="$(grep -m1 -o 'VEC_PANEL_BUILD = [0-9]*' "$DUPLICATA" || echo 'sem marca de build')"
+  echo "▸ Achei outra cópia do painel — e ela competia com esta:"
+  echo "    $DUPLICATA  ($BUILD_DUP)"
+
+  # Só remove o que é comprovadamente nosso.
+  if grep -q "Vectorize AE Bridge" "$DUPLICATA"; then
+    rm -f "$DUPLICATA"
+    rm -rf "$USER_PANELS/lib"
+    echo "    removida — agora há uma instalação só."
+  else
+    echo "    NÃO removi: este arquivo não parece ser o painel deste projeto."
+    echo "    Confira e apague à mão, senão o After Effects pode carregar o errado."
+  fi
+fi
+
 cat <<'EOF'
 
 ✓ Painel copiado.

@@ -2803,6 +2803,30 @@ vec.tools.execute_script = function (args) {
     );
   }
 
+  // ── Por que a fila de render é proibida aqui ────────────────────────────────
+  // `save_frame` existe e já paga o preço de usar a fila de render: `timeSpanStart` em
+  // tempo de exibição (`comp.displayStartTime + relativo`, e errar isso rende quadro em
+  // branco), template de output em PNG achado por busca, pasta que a fila realmente
+  // aceita gravar no macOS, resolução forçada para Full, diálogos silenciados, e
+  // conferência do arquivo no disco depois.
+  //
+  // Código escrito na hora não tem como saber de nada disso, e reimplementá-lo aqui
+  // reencontra exatamente as mesmas armadilhas — uma por uma, cada uma custando uma
+  // rodada de diagnóstico. Foi o que aconteceu: o aviso "will cause render to have
+  // frames outside of range" voltou depois de corrigido, porque a fila estava sendo
+  // usada por fora do caminho que tinha a correção.
+  if (args.code.indexOf("renderQueue") !== -1) {
+    throw new Error(
+      "Este código usa app.project.renderQueue. Use a ferramenta save_frame em vez " +
+        "disso — ela já resolve o que a fila de render exige e que é fácil de errar: " +
+        "timeSpanStart em tempo de exibição (comp.displayStartTime + tempo relativo, " +
+        "senão o frame sai em branco), template de output em PNG, pasta que a fila " +
+        "aceita no macOS, resolução Full forçada, diálogos silenciados e conferência do " +
+        "arquivo no disco. Se save_frame falhar, relate a falha em vez de contornar: o " +
+        "contorno reencontra todas essas armadilhas."
+    );
+  }
+
   var rotulo = args.label || "Vectorize AE - script";
   app.beginUndoGroup(rotulo);
 
@@ -2977,7 +3001,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 7;
+var VEC_PANEL_BUILD = 8;
 
 var VEC_BRIDGE_SCHEMA = 3;
 

@@ -509,6 +509,29 @@ Divergência passa a ser fato observável em vez de hipótese, e o aviso tem que
 de qualquer outro diagnóstico: investigar comportamento de código velho é investigar código
 que não existe mais.
 
+### E confira se existe mais de uma cópia instalada
+
+O After Effects carrega painéis de **duas** pastas:
+
+```
+/Applications/Adobe After Effects <ano>/Scripts/ScriptUI Panels/
+~/Library/Application Support/Adobe/Adobe After Effects <ano>/Scripts/ScriptUI Panels/
+```
+
+Uma cópia velha na segunda continua aparecendo no menu Window e continua carregável. O
+resultado é o diagnóstico mais caro possível: você copia o arquivo novo, confere o número de
+build **no arquivo que copiou**, ele está certo — e o AE carrega o outro. Todo defeito já
+corrigido reaparece com números novos, e a leitura natural ("então a correção está errada")
+é falsa. Nenhum sintoma aponta para cá.
+
+Duas entradas parecidas no menu Window são o sinal. Procure todas as cópias antes de
+investigar qualquer coisa:
+
+```bash
+find /Applications ~/Library/Application\ Support/Adobe -name "bridge-panel.jsx" 2>/dev/null \
+  -exec grep -H -m1 -o "VEC_PANEL_BUILD = [0-9]*" {} \;
+```
+
 ## `timeSpanStart` da fila de render é em tempo de exibição
 
 `comp.displayStartTime` não é zero quando a comp veio de uma sequência maior. A fila de

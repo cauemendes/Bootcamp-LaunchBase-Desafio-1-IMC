@@ -41,7 +41,7 @@ import crypto from "node:crypto";
  * Suba este número junto com qualquer mudança no painel que o servidor precise
  * enxergar. Divergência passa a ser um fato observável, não uma hipótese.
  */
-export const PANEL_BUILD_ESPERADO = 7;
+export const PANEL_BUILD_ESPERADO = 8;
 
 export const CMD_DIR = "cmd";
 export const RES_DIR = "res";
