@@ -3,22 +3,32 @@
 # Instala o painel da ponte na pasta ScriptUI Panels do After Effects.
 #
 # ── Onde ele instala, e por quê ───────────────────────────────────────────────
-# O After Effects carrega painéis de DUAS pastas:
+# O padrão é a pasta de painéis DENTRO do pacote do aplicativo:
 #
-#   1. ~/Library/Application Support/Adobe/<AE>/Scripts/ScriptUI Panels/   (por usuário)
-#   2. /Applications/Adobe After Effects <ano>/Scripts/ScriptUI Panels/     (aplicativo)
+#   /Applications/Adobe After Effects <ano>/Scripts/ScriptUI Panels/
 #
-# O padrão daqui é a primeira, e por três motivos que importam na prática: não pede
-# senha de administrador, sobrevive a uma atualização do After Effects — a segunda é
-# apagada junto —, e é a mesma para qualquer pessoa da equipe.
+# Ela pede senha de administrador e é apagada quando o After Effects se atualiza. As
+# duas coisas são chatas, e mesmo assim é o padrão — porque é a única que comprovadamente
+# funciona.
 #
-# Ter cópia nas duas é a pior situação possível. O aplicativo carrega uma delas, você
-# confere o número de build na outra, e todo defeito já corrigido reaparece sem que
-# nada aponte para a causa. Este script trata isso: instala numa, e denuncia a outra.
+# Houve uma tentativa de usar a pasta por usuário
+# (~/Library/Application Support/Adobe/<AE>/Scripts/ScriptUI Panels), que resolveria as
+# duas chatices de uma vez. O painel foi instalado lá e **sumiu do menu Window**: esta
+# versão do After Effects não varre aquela pasta, ou não com esse nome. A troca foi feita
+# com base no que a documentação sugere, sem verificação numa instalação real, e o
+# resultado foi um usuário sem painel nenhum.
+#
+# `--user` continua disponível para quem quiser testar de novo, e está marcado como não
+# verificado. Se funcionar na sua instalação, avise — o padrão volta a mudar, aí com prova.
+#
+# Ter cópia nas duas pastas é a pior situação possível: o aplicativo carrega uma, você
+# confere o build na outra, e todo defeito já corrigido reaparece sem que nada aponte
+# para a causa. Este script instala numa e denuncia a outra.
 #
 # Uso:
-#   bash scripts/install-bridge.sh              # instala para o usuário (recomendado)
-#   bash scripts/install-bridge.sh --app        # instala dentro do aplicativo (sudo)
+#   bash scripts/install-bridge.sh              # instala no aplicativo (padrão, pede sudo)
+#   bash scripts/install-bridge.sh --user       # instala por usuário — NÃO VERIFICADO
+#   bash scripts/install-bridge.sh --dest DIR   # instala num caminho que você indicar
 #   bash scripts/install-bridge.sh --doctor     # não instala nada, só relata
 #   bash scripts/install-bridge.sh --ae "/Applications/Adobe After Effects 2026"
 
@@ -27,12 +37,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JSX_DIR="$REPO_ROOT/packages/jsx"
 
-MODO="usuario"
+MODO="aplicativo"
 AE_APP=""
+DIR_DEST=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --app)    MODO="aplicativo"; shift ;;
+    --user)   MODO="usuario"; shift ;;
+    --dest)   MODO="dest"; DIR_DEST="$2"; shift 2 ;;
     --doctor) MODO="doctor"; shift ;;
     --ae)     AE_APP="$2"; shift 2 ;;
     -h|--help)
@@ -128,6 +141,11 @@ relatar() {
   echo "    aplicativo build $(build_de "$DIR_APP/bridge-panel.jsx")"
   echo "               $DIR_APP"
 
+  if [ -n "$DIR_DEST" ]; then
+    echo "    indicado   build $(build_de "$DIR_DEST/bridge-panel.jsx")"
+    echo "               $DIR_DEST"
+  fi
+
   if [ -f "$DIR_USUARIO/bridge-panel.jsx" ] && [ -f "$DIR_APP/bridge-panel.jsx" ]; then
     cat <<'AVISO'
 
@@ -150,7 +168,7 @@ AVISO
 AVISO
     else
       echo ""
-      echo "      Apague uma. Rode este script sem --app para ficar só com a do usuário."
+      echo "      Apague uma. Rode este script sem --user para ficar só com a do aplicativo."
     fi
   fi
 }
@@ -209,7 +227,37 @@ if [ "$MODO" = "aplicativo" ]; then
 MSG
     exit 1
   fi
+elif [ "$MODO" = "dest" ]; then
+  if [ -z "$DIR_DEST" ]; then
+    echo "--dest precisa do caminho da pasta." >&2
+    exit 1
+  fi
+
+  DESTINO="$DIR_DEST"
+  # Com destino indicado, "a outra cópia" não é uma só — o relatório no fim mostra as
+  # três, e quem escolheu o caminho é quem sabe qual apagar.
+  OUTRO=""
+
+  if [ -w "$(dirname "$DESTINO")" ] || [ -w "$DESTINO" ]; then
+    SUDO=""
+  elif sudo -n true 2>/dev/null || [ -t 0 ]; then
+    echo "▸ Essa pasta exige administrador — vou pedir sua senha."
+    SUDO="sudo"
+  else
+    echo "✗ Preciso de administrador para escrever em $DESTINO." >&2
+    exit 1
+  fi
+
+  $SUDO mkdir -p "$DESTINO"
 else
+  cat <<'AVISO'
+
+  ⚠️  --user instala numa pasta que NÃO foi verificada nesta versão do After Effects.
+
+      Numa tentativa anterior o painel foi instalado aqui e sumiu do menu Window. Se
+      isso acontecer, rode de novo sem --user para voltar ao caminho que funciona.
+
+AVISO
   DESTINO="$DIR_USUARIO"
   OUTRO="$DIR_APP"
   SUDO=""
@@ -226,7 +274,7 @@ echo "    $DESTINO/bridge-panel.jsx"
 
 # ---- remover a cópia concorrente ---------------------------------------------
 
-if [ -f "$OUTRO/bridge-panel.jsx" ]; then
+if [ -n "$OUTRO" ] && [ -f "$OUTRO/bridge-panel.jsx" ]; then
   echo "▸ Existe outra cópia competindo:"
   echo "    $OUTRO/bridge-panel.jsx  (build $(build_de "$OUTRO/bridge-panel.jsx"))"
 
