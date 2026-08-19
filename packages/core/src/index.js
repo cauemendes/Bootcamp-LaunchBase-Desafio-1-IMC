@@ -16,6 +16,8 @@ export {
 
 export { parsePathData, subpathsBounds } from "./svg-path.js";
 
+export { ArrowError, arrowGeometry, expandArrow } from "./arrow.js";
+
 export {
   SCENE_SPEC_VERSION,
   validateScene,

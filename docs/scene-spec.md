@@ -142,3 +142,46 @@ espera acontece em `packages/core/src/color.js`.
 scripting recebe são interpretados nesse espaço e as cores saem mais claras do que a
 imagem original. `hexToAeColor()` aceita um parâmetro de gama para compensar, e o
 painel expõe isso como uma opção. Em projeto sRGB padrão (o default), não faça nada.
+
+## `arrow` — seta
+
+Traço com ponta, num elemento só. Existe porque o After Effects não tem seta: ela é um
+path com stroke mais um triângulo preenchido, e o triângulo precisa estar na ponta do
+path, girado para a direção em que o path **chega** ali.
+
+```json
+{
+  "id": "fluxo1",
+  "shape": {
+    "type": "arrow",
+    "x1": 120, "y1": 380,
+    "x2": 430, "y2": 250,
+    "bend": -60,
+    "headLength": 0,
+    "headWidth": 0
+  },
+  "stroke": { "color": "#12263a", "width": 6 }
+}
+```
+
+| Campo | O que é |
+|---|---|
+| `x1, y1` | onde começa |
+| `x2, y2` | onde aponta — o bico encosta exatamente aqui |
+| `bend` | quanto o meio do traço se afasta da reta entre as pontas, em px. 0 é reta; o sinal decide o lado |
+| `headLength` | comprimento da ponta. 0 = proporcional à espessura do traço |
+| `headWidth` | largura da base. 0 = proporcional ao comprimento |
+
+Num traço curvo, a direção de chegada é a tangente no fim da curva, não a direção de
+início para fim. Usar a segunda deixa a ponta visivelmente torta, e era o erro mais comum
+quando a seta era montada peça por peça.
+
+O traço termina na **base** do triângulo, não no bico: sobrepostos, o stroke aparece por
+dentro da ponta e engrossa ela.
+
+A cor da ponta sai do `stroke` — numa seta desenhada à mão o bico é da cor do traço, e
+declarar a mesma cor duas vezes é convite para elas divergirem numa das vinte setas de um
+diagrama. `fill` sobrescreve, para o caso de a ponta ser mesmo de outra cor.
+
+As duas partes ficam no mesmo grupo, e portanto na mesma camada: partida em duas, quem
+for mexer na seta arrasta uma metade e deixa a outra para trás.

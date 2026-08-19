@@ -92,6 +92,37 @@ export const SHAPE_SCHEMA = {
     },
     {
       type: "object",
+      description:
+        "Seta: traço com ponta. USE ISTO em vez de desenhar o traço e o triângulo " +
+        "separados — a ponta é posicionada e girada pela geometria da curva, que é onde " +
+        "uma seta montada à mão sai torta.",
+      properties: {
+        type: { type: "string", enum: ["arrow"] },
+        x1: { type: "number", description: "Onde a seta começa." },
+        y1: { type: "number" },
+        x2: { type: "number", description: "Onde a seta aponta — é aqui que o bico encosta." },
+        y2: { type: "number" },
+        bend: {
+          type: "number",
+          description:
+            "Curvatura em pixels, perpendicular à reta início→ponta. 0 é reta. Meça olhando " +
+            "o quanto o meio do traço se afasta de uma reta imaginária entre as duas pontas. " +
+            "O sinal decide o lado: se sair para o lado errado, inverta.",
+        },
+        headLength: {
+          type: "number",
+          description: "Comprimento da ponta. 0 deixa proporcional à espessura do traço.",
+        },
+        headWidth: {
+          type: "number",
+          description: "Largura da base da ponta. 0 deixa proporcional ao comprimento.",
+        },
+      },
+      required: ["type", "x1", "y1", "x2", "y2", "bend", "headLength", "headWidth"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
       description: "Estrela ou polígono regular.",
       properties: {
         type: { type: "string", enum: ["star"] },

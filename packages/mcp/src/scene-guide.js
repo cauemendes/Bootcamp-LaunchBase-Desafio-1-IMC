@@ -153,6 +153,27 @@ A posição é a baseline da **primeira** linha. \`lineHeight\` é de baseline a
 pixels — meça as duas baselines no frame e subtraia. Sem ele o After Effects usa 1,2 × o
 corpo, que é mais solto que a maioria dos designs.
 
+**Seta é um tipo próprio — não desenhe traço e triângulo separados.**
+
+\`\`\`json
+{ "shape": { "type": "arrow", "x1": 120, "y1": 380, "x2": 430, "y2": 250, "bend": -60,
+             "headLength": 0, "headWidth": 0 },
+  "stroke": { "color": "ink", "width": 6 } }
+\`\`\`
+
+A ponta encosta em \`x2, y2\` e é girada para a direção em que o traço **chega** ali — num
+traço curvo isso não é a direção de início para fim, e é exatamente aí que uma seta
+montada à mão sai torta. O traço para na base da ponta, senão o stroke aparece por dentro
+do bico e engrossa ele.
+
+\`bend\` é o quanto o meio do traço se afasta de uma reta imaginária entre as duas pontas,
+em pixels. 0 é reta. Se a curva sair para o lado errado, inverta o sinal. Deixe
+\`headLength\` e \`headWidth\` em 0 para a ponta acompanhar a espessura do traço — ponta de
+tamanho fixo some num traço grosso e vira bandeira num traço fino.
+
+A cor da ponta sai do \`stroke\`, como numa seta desenhada à mão. E as duas partes ficam na
+mesma camada, então arrastar a seta no After Effects move ela inteira.
+
 **Cores repetidas usam exatamente o mesmo hex.** Amostre do meio das áreas chapadas,
 longe das bordas, que estão suavizadas e devolvem cor errada.
 

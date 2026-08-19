@@ -9,11 +9,12 @@
  */
 
 import { normalizeHex } from "./color.js";
+import { ArrowError, arrowGeometry, expandArrow } from "./arrow.js";
 import { parsePathData } from "./svg-path.js";
 
 export const SCENE_SPEC_VERSION = "1.0";
 
-const SHAPE_TYPES = new Set(["rect", "ellipse", "polygon", "path", "star", "text", "image"]);
+const SHAPE_TYPES = new Set(["rect", "ellipse", "polygon", "path", "star", "text", "image", "arrow"]);
 
 /** Como uma imagem se acomoda na caixa reservada para ela. */
 const IMAGE_FITS = new Set(["cover", "contain", "stretch"]);
@@ -241,6 +242,16 @@ function validateShape(shape, at, errors, warnings, canvas) {
       }
       break;
     }
+    case "arrow": {
+      ["x1", "y1", "x2", "y2"].forEach(need);
+      try {
+        arrowGeometry(shape);
+      } catch (e) {
+        if (e instanceof ArrowError) errors.push(`${at}: ${e.message}`);
+        else throw e;
+      }
+      break;
+    }
     case "star": {
       ["cx", "cy", "outerRadius", "innerRadius"].forEach(need);
       if (!Number.isInteger(shape.points) || shape.points < 3) {
@@ -380,6 +391,36 @@ export function shapeBounds(shape) {
       const minX = Math.min(...xs), minY = Math.min(...ys);
       return { x: minX, y: minY, width: Math.max(...xs) - minX, height: Math.max(...ys) - minY };
     }
+    case "arrow": {
+      // A caixa da seta inclui a ponta e a barriga da curva. Só x1..x2 subestimaria uma
+      // seta muito curva, e o aviso de enquadramento diria que cabe quando não cabe.
+      //
+      // Uma seta inválida cai aqui vinda da própria validação, que chama isto para o
+      // aviso de enquadramento depois de já ter registrado o erro. Deixar estourar
+      // trocaria uma lista de erros úteis por uma exceção sobre um elemento só.
+      let g;
+      try {
+        g = arrowGeometry(shape);
+      } catch {
+        return { x: shape.x1, y: shape.y1, w: 0, h: 0 };
+      }
+      const xs = [shape.x1, shape.x2, ...g.head.map((p) => p[0])];
+      const ys = [shape.y1, shape.y2, ...g.head.map((p) => p[1])];
+
+      if (typeof shape.bend === "number" && shape.bend !== 0) {
+        const comp = Math.hypot(shape.x2 - shape.x1, shape.y2 - shape.y1) || 1;
+        xs.push((shape.x1 + shape.x2) / 2 + (-(shape.y2 - shape.y1) / comp) * shape.bend);
+        ys.push((shape.y1 + shape.y2) / 2 + ((shape.x2 - shape.x1) / comp) * shape.bend);
+      }
+
+      return {
+        x: Math.min(...xs),
+        y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs),
+        h: Math.max(...ys) - Math.min(...ys),
+      };
+    }
+
     case "path": {
       try {
         const subpaths = parsePathData(shape.d);
@@ -437,8 +478,18 @@ export function normalizeScene(scene, options = {}) {
     duration: isPositiveNumber(scene.canvas.duration) ? scene.canvas.duration : 10,
   };
 
+  // ── A seta vira dois elementos antes de tudo ────────────────────────────────
+  // Traço e ponta são duas formas no After Effects, e a partir daqui não há nada de
+  // especial nelas. Expandir cedo mantém agrupamento, ordenação por z e construção
+  // sem um caso a mais para lembrar em cada um.
+  const expandidos = [];
+  for (const el of scene.elements) {
+    if (el?.shape?.type === "arrow") expandidos.push(...expandArrow(el));
+    else expandidos.push(el);
+  }
+
   // Ordem estável: por `z`, empates mantendo a ordem original.
-  const sorted = scene.elements
+  const sorted = expandidos
     .map((el, i) => ({ el, i }))
     .sort((a, b) => (numOr(a.el.z, 0) - numOr(b.el.z, 0)) || (a.i - b.i))
     .map(({ el }) => el);
