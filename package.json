@@ -18,6 +18,7 @@
     "build:cep": "npm install --workspace packages/cep",
     "analyze": "node scripts/analyze.mjs",
     "mcp": "node packages/mcp/bin/vectorize-ae-mcp.mjs",
-    "bundle": "node scripts/bundle-jsx.mjs packages/jsx/bridge-panel.jsx dist/bridge-panel.jsx"
+    "bundle": "node scripts/bundle-jsx.mjs packages/jsx/bridge-panel.jsx dist/bridge-panel.jsx",
+    "update": "git pull --ff-only origin \"$(git rev-parse --abbrev-ref HEAD)\" && bash scripts/install-bridge.sh"
   }
 }

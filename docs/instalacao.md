@@ -113,24 +113,52 @@ sugerindo o motivo.
 
 ## Atualizar para uma versão nova
 
+Um comando, sempre o mesmo:
+
 ```bash
-cd ~/Documents/vectorize-ae
-git pull
-npm install
-bash scripts/install-bridge.sh
+cd ~/Documents/vectorize-ae && npm run update
 ```
 
-Depois **reinicie o After Effects**. Isso não é zelo: a engine de scripting do AE só
-relê o arquivo do painel quando o aplicativo sobe. Copiar o arquivo novo com o AE
-aberto não troca o código em execução, e o sintoma é cruel — o defeito que a versão
-nova corrige continua acontecendo, e nada indica o motivo.
+Ele baixa as mudanças e reinstala o painel. Depois, duas coisas precisam reiniciar:
 
-O servidor também precisa reiniciar: feche e reabra a conversa do Claude.
+1. **O After Effects.** A engine de scripting só relê o arquivo do painel quando o
+   aplicativo sobe. Copiar o arquivo novo com o AE aberto não troca o código em
+   execução, e o sintoma é cruel — o defeito que a versão nova corrige continua
+   acontecendo, e nada indica o motivo.
+2. **A conversa do Claude.** O servidor sobe junto com ela.
+
+Reiniciar os dois sempre funciona. Nem toda mudança precisa dos dois — as que mexem só
+no servidor não pedem o After Effects —, mas descobrir qual é qual custa mais atenção do
+que fechar e abrir.
+
+Se você esquecer, a ferramenta cobra sozinha: o painel manda o número de build junto com
+cada sinal de vida, e o servidor compara com o que espera. Quando não bate, ele diz para
+reinstalar e reiniciar, em vez de deixar você investigar um defeito que já está
+corrigido.
 
 Se você esquecer alguma das duas coisas, a ferramenta avisa. O painel manda o número de
 build junto com cada sinal de vida, e o servidor compara com o que espera — quando não
 bate, ele diz para reinstalar e reiniciar em vez de deixar você investigar um defeito
 que já está corrigido.
+
+## Mudar o projeto de lugar
+
+A pasta do repositório pode ir para onde você quiser — é só código. Só uma coisa aponta
+para ela: o registro do servidor no Claude, que guarda o caminho absoluto. Depois de
+mover, registre de novo:
+
+```bash
+claude mcp remove vectorize-ae --scope user
+claude mcp add vectorize-ae --scope user -- node /novo/caminho/packages/mcp/bin/vectorize-ae-mcp.mjs
+```
+
+O painel instalado no After Effects é uma **cópia**, então não se importa com a mudança.
+
+As pastas de dados — marcas e ponte — não ficam no repositório e não devem ser movidas
+junto. A da ponte principalmente: o painel dentro do After Effects a encontra por
+caminho fixo, e o After Effects não enxerga variáveis de ambiente do seu terminal.
+Mover essa pasta separa os dois lados da ponte, e o sintoma é todo comando dando
+timeout sem explicação.
 
 ## Quando algo não funciona
 
