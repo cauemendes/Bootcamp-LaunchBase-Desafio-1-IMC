@@ -266,6 +266,8 @@ function abrirAE({ escutandoAntes = false } = {}) {
       autoStart: alvo.vecBridgeAutoStart,
       start: alvo.vecBridgeStart,
       stop: alvo.vecBridgeStop,
+      status: alvo.vecBridgeStatus,
+      refresh: alvo.vecBridgeRefreshUI,
     };
   };
 
@@ -282,6 +284,16 @@ function dispararTarefa(host, api, trecho) {
   else if (trecho === "vecBridgePoll") api.poll();
   else if (trecho === "vecBridgeSupervise") api.supervisor();
   return t;
+}
+
+/**
+ * Provoca uma escrita de status em todos os painéis.
+ *
+ * Não serve usar `poll()` aqui: um ciclo sem comando na pasta volta antes de escrever
+ * status, então ele não exercita o registro.
+ */
+function vecStatusQualquer(host) {
+  host.api.status("teste");
 }
 
 /** Liga a ponte pelo caminho real: o clique no botão. */
@@ -315,7 +327,11 @@ test("instalação nova não escuta sozinha, nem depois da tarefa adiada", () =>
 
   assert.equal(host.api.estado.running, false);
   assert.equal(toggle.text, "Iniciar");
-  assert.match(status.text, /parada/);
+
+  // Na carga o painel não lê a preferência: ler disco durante a subida do After Effects
+  // é justamente o que se quer evitar. Então o status é o mesmo nos dois casos, e a
+  // decisão só aparece quando a tarefa adiada roda.
+  assert.match(status.text, /aguardando/);
 
   dispararTarefa(host, host.api, "vecBridgeAutoStart");
 
@@ -327,7 +343,6 @@ test("a ponte que estava escutando retoma sozinha na sessão seguinte", () => {
   // É o que mantém um lote noturno vivo se o After Effects reiniciar no meio.
   const host = abrirAE({ escutandoAntes: true });
 
-  assert.match(widgetsDo(host, 0).status.text, /aguardando/);
   assert.equal(host.api.estado.running, false, "não escuta durante a subida do app");
 
   dispararTarefa(host, host.api, "vecBridgeAutoStart");
@@ -468,23 +483,72 @@ test("o diagnóstico confirma polling normal sem falar de diálogo", () => {
   assert.doesNotMatch(logDe({ logBox }), /ATENÇÃO/);
 });
 
-test("um painel morto sai do registro sem impedir os vivos de atualizar", () => {
-  const host = abrirAE();
-  host.carregar();
-
-  // Simula a aba fechada pelo usuário sem passar por onClose: escrever na widget lança.
-  const morto = host.api.estado.uis[0];
-  Object.defineProperty(morto, "status", {
+/** Faz as escritas nesta UI lançarem, como numa widget destruída. */
+function matarUI(ui) {
+  Object.defineProperty(ui, "status", {
     get() {
       throw new Error("widget destruída");
     },
   });
+}
+
+test("painel morto sai do registro depois de insistir, sem impedir os vivos", () => {
+  const host = abrirAE();
+  host.carregar();
+
+  // Simula a aba fechada pelo usuário sem passar por onClose.
+  matarUI(host.api.estado.uis[0]);
 
   const vivo = widgetsDo(host, 1);
   vivo.toggle.onClick();
 
-  assert.equal(host.api.estado.uis.length, 1, "o morto saiu do registro");
   assert.match(vivo.status.text, /ouvindo/, "o vivo recebeu a atualização");
+
+  // Três falhas para podar: uma só pode ser passageira. Ver `vecBridgeCadaUI`.
+  for (let i = 0; i < 4; i++) vecStatusQualquer(host);
+
+  assert.equal(host.api.estado.uis.length, 1, "o morto saiu do registro");
+});
+
+test("falha passageira não tira o painel do registro", () => {
+  // ── O sintoma que isto conserta ──────────────────────────────────────────────
+  // Podar na primeira falha confunde painel destruído com o After Effects refazendo o
+  // layout durante a subida, ou um diálogo de outro script na frente. O painel saía da
+  // lista de quem recebe atualização e o botão parava de responder para sempre: o
+  // clique rodava, a ponte ligava e desligava de verdade, e o rótulo nunca acompanhava.
+  const host = abrirAE();
+  const ui = host.api.estado.uis[0];
+  let falhar = true;
+
+  const original = ui.status;
+  Object.defineProperty(ui, "status", {
+    get() {
+      if (falhar) {
+        falhar = false;
+        throw new Error("layout ocupado");
+      }
+      return original;
+    },
+  });
+
+  vecStatusQualquer(host);
+  assert.equal(host.api.estado.uis.length, 1, "continua no registro");
+
+  widgetsDo(host, 0).toggle.onClick();
+  assert.match(original.text, /ouvindo/, "e volta a receber atualização");
+});
+
+test("um painel podado se reinscreve ao ser clicado", () => {
+  // Painel em que alguém acabou de clicar está vivo, por definição.
+  const host = abrirAE();
+  const { toggle } = widgetsDo(host, 0);
+
+  host.api.estado.uis.length = 0;
+
+  toggle.onClick();
+
+  assert.equal(host.api.estado.uis.length, 1, "voltou ao registro");
+  assert.equal(toggle.text, "Parar", "e o rótulo respondeu ao clique");
 });
 
 test("o heartbeat grava running e uptime — é o que separa parada de travada", () => {

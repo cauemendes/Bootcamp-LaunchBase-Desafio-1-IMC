@@ -377,6 +377,22 @@ que a pessoa clicou. O sintoma é o pior possível para depurar: clicar em Inici
 mudar, e nenhum erro em lugar nenhum. Mantenha uma **lista** de painéis e escreva em todos,
 podando quem lança (painel fechado tem widget destruída, e escrever nela lança).
 
+**Não pode podar painel do registro na primeira falha.** Escrita em widget falha por dois
+motivos muito diferentes: painel destruído, que nunca mais aceita, e falha passageira — o
+After Effects refazendo layout na subida, um diálogo de outro script na frente. Tratar as
+duas igual produz o sintoma mais confuso possível: o botão para de responder para sempre.
+O clique roda, o estado muda, a ponte liga e desliga de verdade, e o rótulo nunca acompanha
+porque o painel saiu da lista de quem recebe atualização.
+
+Conte falhas consecutivas e pode só depois de algumas. E reinscreva o painel quando ele
+receber um clique — painel clicado está vivo, por definição, e é o único lugar com prova.
+
+**Carga de painel encaixado faz o mínimo.** Ela acontece durante a subida do After Effects,
+ao lado dos outros painéis de script do usuário carregando no mesmo instante — a janela mais
+frágil que existe. Foi ali que apareceu `internal verification failure {no current context}`
+com dois painéis abertos juntos. Monte as widgets, agende uma tarefa, e ponha todo o resto
+dentro dela: leitura de arquivo, `app.version`, escrita de log.
+
 Vale também fazer o clique se anunciar no log. "Cliquei e não mudou nada" é ambíguo entre o
 handler não ter rodado e ter rodado e falhado, e ScriptUI engole exceção de handler sem
 deixar rastro.

@@ -2977,7 +2977,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 5;
+var VEC_PANEL_BUILD = 6;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
@@ -3136,15 +3136,47 @@ function vecBridgeCadaUI(fn) {
 
   for (var i = 0; i < vecBridge.uis.length; i++) {
     var ui = vecBridge.uis[i];
+
     try {
       fn(ui);
+      ui.falhas = 0;
       vivos.push(ui);
     } catch (e) {
-      // Painel morto. Não entra em `vivos`, e portanto sai do registro.
+      // ── Por que não podar na primeira falha ───────────────────────────────
+      // A versão anterior tirava o painel do registro em qualquer exceção. Isso
+      // confunde duas coisas muito diferentes: painel destruído, que nunca mais aceita
+      // escrita, e falha passageira — o After Effects refazendo o layout durante a
+      // subida do aplicativo, um diálogo de erro de outro script na frente.
+      //
+      // Podar por uma falha passageira produz o sintoma mais confuso que este painel
+      // já teve: o botão para de responder para sempre. O clique roda, o estado muda,
+      // a ponte liga e desliga de verdade — e o rótulo nunca mais acompanha, porque o
+      // painel saiu da lista de quem recebe atualização. Quem olha vê um botão morto.
+      ui.falhas = (ui.falhas || 0) + 1;
+      if (ui.falhas < 3) vivos.push(ui);
     }
   }
 
   vecBridge.uis = vivos;
+}
+
+/**
+ * Garante que este painel está no registro.
+ *
+ * Um painel em que alguém acabou de clicar está vivo, por definição. Se ele não estiver
+ * na lista — podado por falhas, ou de uma carga anterior do arquivo —, o lugar certo de
+ * corrigir isso é aqui, onde há prova de vida.
+ */
+function vecBridgeGarantirUI(ui) {
+  for (var i = 0; i < vecBridge.uis.length; i++) {
+    if (vecBridge.uis[i] === ui) {
+      ui.falhas = 0;
+      return;
+    }
+  }
+
+  ui.falhas = 0;
+  vecBridge.uis.push(ui);
 }
 
 function vecBridgeLog(message) {
@@ -3818,6 +3850,12 @@ function vecBridgeAutoStart() {
   if (!vecBridge.autoStart) return;
   vecBridge.autoStart = false;
 
+  // Saiu da carga do painel para cá: `app.version` é DOM e a preferência é disco, e
+  // nenhum dos dois precisa acontecer no meio da subida do aplicativo.
+  vecBridgeLog(
+    "painel carregado — build " + VEC_PANEL_BUILD + " · After Effects " + app.version
+  );
+
   if (!vecBridgeLerPref()) {
     vecBridgeStatus("parada — clique em Iniciar");
     vecBridgeLog(
@@ -4006,6 +4044,10 @@ function vecBridgeDiagnostico() {
     vecBridge.uis.push(minhaUI);
 
     toggle.onClick = function () {
+      // Prova de vida: este painel aceitou um clique, então tem que estar recebendo as
+      // atualizações. Se tinha saído do registro, volta agora.
+      vecBridgeGarantirUI(minhaUI);
+
       // ── O clique se anuncia no log ───────────────────────────────────────────
       // "Cliquei e não mudou nada" é ambíguo entre duas coisas muito diferentes: o
       // handler não rodou, ou rodou e falhou. Uma linha no log separa as duas de graça,
@@ -4036,6 +4078,13 @@ function vecBridgeDiagnostico() {
 
       // Mesmo que algo acima tenha falhado, o rótulo passa a refletir a verdade.
       vecBridgeRefreshUI();
+
+      // E o painel clicado é atualizado direto, sem passar pelo registro. Redundante
+      // quando tudo funciona, e é o que garante a resposta visual ao clique quando
+      // não funciona — que é o único momento em que isso importa.
+      try {
+        minhaUI.toggle.text = vecBridge.running ? "Parar" : "Iniciar";
+      } catch (e) {}
     };
 
     diagnostico.onClick = function () {
@@ -4099,21 +4148,21 @@ function vecBridgeDiagnostico() {
     win.layout.layout(true);
   }
 
-  vecBridgeLog(
-    "painel carregado — build " + VEC_PANEL_BUILD + " · After Effects " + app.version
-  );
-
-  // ── Por que o auto-início é adiado ──────────────────────────────────────────
-  // Se o painel está aberto, a intenção é escutar — clicar "Iniciar" toda vez seria
-  // só uma etapa a mais para esquecer. Mas iniciar *agora* é errado: um painel
-  // encaixado carrega junto com o workspace, durante a subida do After Effects, antes
-  // de existir projeto aberto. O polling ficava rodando no meio da carga do app e do
-  // projeto — o momento em que o DOM do AE menos aguenta ser tocado.
+  // ── Por que quase nada acontece aqui ────────────────────────────────────────
+  // Um painel encaixado carrega junto com o workspace, durante a subida do After
+  // Effects, antes de existir projeto aberto — e ao lado dos outros painéis de script
+  // do usuário, que estão carregando no mesmo instante. É a janela mais frágil que
+  // existe, e onde apareceu `internal verification failure {no current context}` com o
+  // Bridge e o Motion abertos juntos.
+  //
+  // Então a carga faz o mínimo: monta as widgets e agenda uma tarefa. Nada de ler
+  // arquivo de preferência, nada de consultar `app.version`, nada de escrever no log —
+  // tudo isso foi para dentro do início adiado, onde a thread já está livre.
   //
   // `scheduleTask` com repeat=false só registra o timer; o callback roda depois, na
-  // thread principal, quando ela estiver livre. Se o AE ainda estiver ocupado
-  // subindo, ou com um diálogo na frente, ele simplesmente atrasa — que é exatamente
-  // o comportamento desejado.
+  // thread principal, quando ela estiver desocupada. Se o AE ainda estiver subindo, ou
+  // com um diálogo na frente, ele simplesmente atrasa — que é o comportamento
+  // desejado, não um efeito colateral.
   vecBridgeRefreshUI();
 
   // Se a ponte já está de pé — carga nova de painel numa engine que já estava
@@ -4121,10 +4170,8 @@ function vecBridgeDiagnostico() {
   if (vecBridge.running) {
     vecBridgeStatus("ouvindo");
   } else {
-    vecBridgeStatus(
-      vecBridgeLerPref() ? "aguardando o After Effects terminar de subir…" : "parada"
-    );
-    $.global.vecBridgeAutoStartId = app.scheduleTask("vecBridgeAutoStart()", 4000, false);
+    vecBridgeStatus("aguardando o After Effects terminar de subir…");
+    $.global.vecBridgeAutoStartId = app.scheduleTask("vecBridgeAutoStart()", 5000, false);
   }
 })(this);
 
