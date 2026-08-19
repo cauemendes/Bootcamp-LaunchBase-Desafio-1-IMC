@@ -7,6 +7,7 @@ import path from "node:path";
 import { Bridge, BridgeError } from "../src/bridge.js";
 import {
   CMD_DIR,
+  PANEL_BUILD_ESPERADO,
   RES_DIR,
   clearStale,
   commandPath,
@@ -343,7 +344,7 @@ test("diagnose distingue painel ausente de painel que parou", () => {
 
   const heartbeat = path.join(dir, "heartbeat.json");
 
-  writeJsonAtomic(heartbeat, { at: Date.now() - 600_000, afterEffects: "26.3x87", cycles: 4821 });
+  writeJsonAtomic(heartbeat, { at: Date.now() - 600_000, afterEffects: "26.3x87", cycles: 4821, build: PANEL_BUILD_ESPERADO });
   const parado = bridge.diagnose();
   assert.equal(parado.state, "parado");
   assert.match(parado.message, /PAROU de escutar/);
@@ -351,7 +352,7 @@ test("diagnose distingue painel ausente de painel que parou", () => {
   // Sem isto, um agente sem supervisão fica tentando para sempre.
   assert.match(parado.message, /não se resolve sozinho/);
 
-  writeJsonAtomic(heartbeat, { at: Date.now(), afterEffects: "26.3x87", cycles: 12, revivals: 2 });
+  writeJsonAtomic(heartbeat, { at: Date.now(), afterEffects: "26.3x87", cycles: 12, revivals: 2, build: PANEL_BUILD_ESPERADO });
   const vivo = bridge.diagnose();
   assert.equal(vivo.state, "vivo");
   assert.match(vivo.message, /ESTÁ escutando/);
@@ -367,6 +368,7 @@ test("diagnose separa ponte desligada no botão de ponte travada", () => {
     afterEffects: "26.3x87",
     cycles: 40,
     running: false,
+    build: PANEL_BUILD_ESPERADO,
   });
 
   const parado = new Bridge({ dir }).diagnose();
@@ -382,7 +384,12 @@ test("diagnose reconhece a assinatura do diálogo na subida", () => {
   // Foi exatamente esse conselho impossível que um agente ficou repetindo.
   const dir = tempDir();
   const heartbeat = path.join(dir, "heartbeat.json");
-  const base = { at: Date.now() - 120_000, afterEffects: "26.3x87", running: true };
+  const base = {
+    at: Date.now() - 120_000,
+    afterEffects: "26.3x87",
+    running: true,
+    build: PANEL_BUILD_ESPERADO,
+  };
 
   writeJsonAtomic(heartbeat, { ...base, cycles: 7, uptime: 2_400 });
   const naSubida = new Bridge({ dir }).diagnose();
@@ -407,6 +414,7 @@ test("diagnose trata a pausa por bloqueio como recado, não como defeito", () =>
     cycles: 120,
     running: false,
     pausadaPorBloqueio: true,
+    build: PANEL_BUILD_ESPERADO,
   });
 
   const pausada = new Bridge({ dir }).diagnose();
@@ -423,12 +431,44 @@ test("diagnose avisa que a ponte viva pode estar só devagar", () => {
     cycles: 90,
     running: true,
     intervalo: 16_000,
+    build: PANEL_BUILD_ESPERADO,
   });
 
   const vivo = new Bridge({ dir }).diagnose();
   assert.equal(vivo.state, "vivo");
   assert.match(vivo.message, /RECUO/);
   assert.match(vivo.message, /timeout maior/);
+});
+
+test("painel desatualizado vira o diagnóstico principal, acima de tudo", () => {
+  // Investigar comportamento de um painel velho é investigar código que não existe mais.
+  // Já aconteceu: um aviso da fila de render corrigido reapareceu, e a leitura natural —
+  // "a correção está errada" — era falsa. A correção estava certa e não estava rodando.
+  const dir = tempDir();
+  writeJsonAtomic(path.join(dir, "heartbeat.json"), {
+    at: Date.now(),
+    afterEffects: "26.3x87",
+    cycles: 40,
+    running: true,
+    build: PANEL_BUILD_ESPERADO - 1,
+  });
+
+  const velho = new Bridge({ dir }).diagnose();
+  assert.equal(velho.state, "desatualizado");
+  assert.match(velho.message, /REINICIAR o After Effects/);
+  assert.match(velho.message, /NÃO investigue/);
+});
+
+test("heartbeat sem marca de build também conta como desatualizado", () => {
+  const dir = tempDir();
+  writeJsonAtomic(path.join(dir, "heartbeat.json"), {
+    at: Date.now(),
+    afterEffects: "26.3x87",
+    cycles: 40,
+    running: true,
+  });
+
+  assert.equal(new Bridge({ dir }).diagnose().state, "desatualizado");
 });
 
 test("diagnose não estoura com heartbeat corrompido", () => {

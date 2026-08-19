@@ -81,6 +81,16 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * já tem o estado antigo, sem os campos novos. Aí é melhor recomeçar do zero do que
  * rodar com metade da estrutura.
  */
+/**
+ * Build deste painel. Precisa casar com `PANEL_BUILD_ESPERADO` no servidor.
+ *
+ * A engine `vectorizeAE` só relê este arquivo quando o After Effects sobe, então copiar
+ * o arquivo novo com o AE aberto não troca o código que está rodando. Sem este número
+ * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
+ * natural é que a correção está errada.
+ */
+var VEC_PANEL_BUILD = 4;
+
 var VEC_BRIDGE_SCHEMA = 3;
 
 if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SCHEMA) {
@@ -539,7 +549,8 @@ function vecBridgeHeartbeat(dirs, forcar) {
       // Diz ao servidor que a pausa não é descuido: alguém está usando o After Effects.
       // Sem isto ele manda "clique em Iniciar", que é o oposto do que a situação pede.
       ',"pausadaPorBloqueio":' + (vecBridge.pausadaPorBloqueio ? "true" : "false") +
-      ',"intervalo":' + vecBridge.intervalo + "}"
+      ',"intervalo":' + vecBridge.intervalo +
+      ',"build":' + VEC_PANEL_BUILD + "}"
     );
     tmp.close();
 
@@ -991,6 +1002,7 @@ function vecBridgeDiagnostico() {
       " · reanimações: " + vecBridge.revivals +
       " · After Effects " + app.version
   );
+  vecBridgeLog("build do painel: " + VEC_PANEL_BUILD);
   vecBridgeLog(
     "ritmo: " + (vecBridge.intervalo / 1000).toFixed(2) + "s entre verificações" +
       (vecBridge.bloqueios ? " · em recuo por " + vecBridge.bloqueios + " bloqueio(s)" : "")
@@ -1175,7 +1187,9 @@ function vecBridgeDiagnostico() {
     win.layout.layout(true);
   }
 
-  vecBridgeLog("painel carregado — After Effects " + app.version);
+  vecBridgeLog(
+    "painel carregado — build " + VEC_PANEL_BUILD + " · After Effects " + app.version
+  );
 
   // ── Por que o auto-início é adiado ──────────────────────────────────────────
   // Se o painel está aberto, a intenção é escutar — clicar "Iniciar" toda vez seria

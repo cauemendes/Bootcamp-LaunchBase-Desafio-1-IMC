@@ -416,6 +416,40 @@ Ver `packages/jsx/test/bridge-panel.test.js`. Três decisões que fizeram difere
   enums do AE). Nome minúsculo tem que devolver `undefined`, senão o idioma
   `var vec = vec || {}` captura o stub e `vec.quote` passa a ser um número.
 
+## Force resolução Full antes de exportar frame
+
+O seletor Full / Half / Third do painel de composição é `comp.resolutionFactor` — Half é
+`[2,2]`. Uma comp em Half exporta o frame com metade da largura e da altura.
+
+Isso importa porque o frame exportado costuma ser a régua de todas as medições feitas em
+cima dele, e o modo de falhar é o pior possível: **nada falha.** As medidas saem coerentes
+entre si e erradas por um fator constante, e a cena reconstruída sai proporcional e do
+tamanho errado. Trabalhar em Half numa comp pesada é o caso normal, não a exceção.
+
+```javascript
+var antes = comp.resolutionFactor;
+comp.resolutionFactor = [1, 1];
+try { exportar(); } finally { comp.resolutionFactor = antes; }
+```
+
+E confronte o tamanho do arquivo gerado com `comp.width`/`comp.height` de fora, onde há
+como ler o cabeçalho do PNG. Se houver outra causa além da resolução, ela aparece como
+aviso em vez de cena torta.
+
+## Painel copiado não é painel rodando
+
+A engine de `#targetengine` só relê o arquivo do painel quando o After Effects sobe.
+Copiar o `.jsx` novo com o aplicativo aberto **não troca o código em execução**.
+
+Isto já produziu um diagnóstico falso: um aviso da fila de render que havia sido corrigido
+reapareceu, e a leitura natural — "a correção está errada" — estava errada. A correção
+estava certa e não estava rodando.
+
+Carimbe um número de build no painel, mande-o no heartbeat, e compare do lado de fora.
+Divergência passa a ser fato observável em vez de hipótese, e o aviso tem que vir **antes**
+de qualquer outro diagnóstico: investigar comportamento de código velho é investigar código
+que não existe mais.
+
 ## `timeSpanStart` da fila de render é em tempo de exibição
 
 `comp.displayStartTime` não é zero quando a comp veio de uma sequência maior. A fila de

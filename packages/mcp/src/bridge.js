@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  PANEL_BUILD_ESPERADO,
   clearStale,
   commandPath,
   consumeJson,
@@ -141,6 +142,30 @@ export class Bridge {
     }
 
     const idade = (Date.now() - dados.at) / 1000;
+
+    // ── Isto vem antes de todo o resto ──────────────────────────────────────────
+    // Painel desatualizado invalida qualquer outro diagnóstico: o defeito que se está
+    // investigando pode já estar corrigido no disco e não estar rodando, porque a engine
+    // do After Effects só relê o arquivo do painel quando o aplicativo sobe. Sem este
+    // aviso, a conclusão natural diante de um defeito reincidente é "a correção está
+    // errada" — e já foi falsa uma vez.
+    const build = typeof dados.build === "number" ? dados.build : 0;
+
+    if (build !== PANEL_BUILD_ESPERADO) {
+      return {
+        state: "desatualizado",
+        heartbeat: dados,
+        message:
+          `O painel instalado no After Effects é o build ${build || "antigo (sem marca)"}, ` +
+          `e este servidor espera o build ${PANEL_BUILD_ESPERADO}.\n\n` +
+          "Enquanto isso não bater, qualquer defeito observado pode já estar corrigido no " +
+          "código e simplesmente não estar rodando. NÃO investigue o comportamento nem " +
+          "tente contornar: o resultado não diz nada sobre o código atual.\n\n" +
+          "AÇÃO: peça para reinstalar o painel e REINICIAR o After Effects. Copiar o " +
+          "arquivo com o aplicativo aberto não troca o código em execução — a engine só " +
+          "relê o painel quando o After Effects sobe.",
+      };
+    }
 
     // Desligado no botão. Estado normal, e o conselho é o mais simples de todos —
     // que só ajuda se não vier embrulhado no alarme de "travou".

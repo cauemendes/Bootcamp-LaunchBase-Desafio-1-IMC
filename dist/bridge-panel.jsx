@@ -1684,16 +1684,52 @@ function vecSaveFrameViaQueue(comp, time, destino) {
  *   que permite descobrir, sem outra rodada de teste, se a API direta voltou a
  *   funcionar numa versão futura do After Effects.
  */
+/**
+ * Força resolução Full pela duração de uma operação, e devolve o que estava antes.
+ *
+ * ── Por que isto não é cosmético ──────────────────────────────────────────────
+ * O seletor de resolução do painel de composição é `comp.resolutionFactor`: Half é
+ * `[2,2]`, Third é `[3,3]`. Uma comp em Half exporta o frame com metade da largura e
+ * da altura — e o frame exportado é a régua de todas as medições feitas em cima dele.
+ *
+ * O resultado de errar isso é o pior tipo: nada falha. As medidas saem coerentes entre
+ * si e erradas por um fator constante, e a cena reconstruída sai proporcional e com
+ * metade do tamanho. Um designer trabalhando em Half para ganhar velocidade — o caso
+ * normal numa comp pesada — pagaria por isso sem nenhum aviso na tela.
+ */
+function vecForcarFull(comp) {
+  var antes = null;
+
+  try {
+    antes = comp.resolutionFactor;
+    if (antes && (antes[0] !== 1 || antes[1] !== 1)) comp.resolutionFactor = [1, 1];
+  } catch (e) {
+    // Sem acesso à propriedade, o melhor resultado aceitável é seguir sem a garantia.
+    return null;
+  }
+
+  return antes;
+}
+
+function vecRestaurarResolucao(comp, antes) {
+  if (!antes) return;
+  try {
+    comp.resolutionFactor = antes;
+  } catch (e) {}
+}
+
 vec.saveFrame = function (comp, time, destino) {
   var alinhado = vecSnapToFrame(comp, time);
   // A fila de render é a operação mais propensa a diálogo de todo o projeto, e era a
   // única sem esta proteção. Foi por aqui que um aviso de intervalo de tempo derrubou
   // a ponte no meio de uma tarefa.
   var silenciado = vec.suppressDialogs();
+  var resolucao = vecForcarFull(comp);
 
   try {
     return vecSaveFrameInterno(comp, alinhado, destino);
   } finally {
+    vecRestaurarResolucao(comp, resolucao);
     vec.restoreDialogs(silenciado);
   }
 };
@@ -2908,6 +2944,16 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * já tem o estado antigo, sem os campos novos. Aí é melhor recomeçar do zero do que
  * rodar com metade da estrutura.
  */
+/**
+ * Build deste painel. Precisa casar com `PANEL_BUILD_ESPERADO` no servidor.
+ *
+ * A engine `vectorizeAE` só relê este arquivo quando o After Effects sobe, então copiar
+ * o arquivo novo com o AE aberto não troca o código que está rodando. Sem este número
+ * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
+ * natural é que a correção está errada.
+ */
+var VEC_PANEL_BUILD = 4;
+
 var VEC_BRIDGE_SCHEMA = 3;
 
 if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SCHEMA) {
@@ -3366,7 +3412,8 @@ function vecBridgeHeartbeat(dirs, forcar) {
       // Diz ao servidor que a pausa não é descuido: alguém está usando o After Effects.
       // Sem isto ele manda "clique em Iniciar", que é o oposto do que a situação pede.
       ',"pausadaPorBloqueio":' + (vecBridge.pausadaPorBloqueio ? "true" : "false") +
-      ',"intervalo":' + vecBridge.intervalo + "}"
+      ',"intervalo":' + vecBridge.intervalo +
+      ',"build":' + VEC_PANEL_BUILD + "}"
     );
     tmp.close();
 
@@ -3818,6 +3865,7 @@ function vecBridgeDiagnostico() {
       " · reanimações: " + vecBridge.revivals +
       " · After Effects " + app.version
   );
+  vecBridgeLog("build do painel: " + VEC_PANEL_BUILD);
   vecBridgeLog(
     "ritmo: " + (vecBridge.intervalo / 1000).toFixed(2) + "s entre verificações" +
       (vecBridge.bloqueios ? " · em recuo por " + vecBridge.bloqueios + " bloqueio(s)" : "")
@@ -4002,7 +4050,9 @@ function vecBridgeDiagnostico() {
     win.layout.layout(true);
   }
 
-  vecBridgeLog("painel carregado — After Effects " + app.version);
+  vecBridgeLog(
+    "painel carregado — build " + VEC_PANEL_BUILD + " · After Effects " + app.version
+  );
 
   // ── Por que o auto-início é adiado ──────────────────────────────────────────
   // Se o painel está aberto, a intenção é escutar — clicar "Iniciar" toda vez seria

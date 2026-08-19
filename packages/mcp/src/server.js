@@ -200,6 +200,23 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
 
   // ---------------------------------------------------------------- visão
 
+  /**
+   * Largura e altura de um PNG, direto do IHDR.
+   *
+   * Não usa `decodePng` de propósito: aqui só interessa o cabeçalho, e decodificar a
+   * imagem inteira para ler dois inteiros faria uma conferência barata custar caro num
+   * frame de 4K. Devolve null se não parecer um PNG — quem chama trata como "não sei",
+   * que é diferente de "está errado".
+   */
+  const dimensoesPng = (bytes) => {
+    // 8 bytes de assinatura + 4 de tamanho do chunk + 4 do tipo "IHDR" = 16.
+    if (!bytes || bytes.length < 24) return null;
+    if (bytes.toString("latin1", 1, 4) !== "PNG") return null;
+    if (bytes.toString("latin1", 12, 16) !== "IHDR") return null;
+
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  };
+
   server.registerTool(
     "save_frame",
     {
@@ -221,20 +238,43 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       // de render, que abre progresso e leva bem mais que os 60s de antes.
       const { result } = await call("save_frame", args, { timeoutMs: 180_000 });
 
-      let base64;
+      let bytes;
       try {
-        base64 = fs.readFileSync(result.path).toString("base64");
+        bytes = fs.readFileSync(result.path);
       } catch (err) {
         return asError(
           `O After Effects gravou o frame em ${result.path}, mas não consegui ler o arquivo: ${err.message}`
         );
       }
 
+      const base64 = bytes.toString("base64");
+
+      // ── Confere o tamanho contra a comp ────────────────────────────────────
+      // O frame exportado é a régua de todas as medições feitas em cima dele. Se ele
+      // sair menor que a comp, as medidas saem coerentes entre si e erradas por um
+      // fator constante — e nada falha. A cena reconstruída fica proporcional e do
+      // tamanho errado, sem um único aviso.
+      //
+      // A causa conhecida é `comp.resolutionFactor` em Half ou Third, o que o painel
+      // agora força para Full durante o export. Este confronto existe para o caso de
+      // haver outra causa: assim ele aparece como aviso, não como cena torta.
+      const medidas = dimensoesPng(bytes);
+      const divergente =
+        medidas && (medidas.width !== result.width || medidas.height !== result.height);
+
       return {
         content: [
           {
             type: "text",
             text:
+              (divergente
+                ? `ATENÇÃO: o PNG saiu ${medidas.width}×${medidas.height}, mas a comp é ` +
+                  `${result.width}×${result.height}. NÃO meça nada neste frame: toda ` +
+                  "medida sairia errada pelo mesmo fator, e o erro não apareceria em " +
+                  "lugar nenhum até a cena estar construída no tamanho errado. " +
+                  "Confira a resolução da composição (o seletor Full / Half / Third do " +
+                  "painel de composição) e renderize de novo.\n\n"
+                : "") +
               `${result.comp} · ${result.width}×${result.height} · t=${result.time}s` +
               // Qual caminho funcionou importa: no 26.3 do macOS a API direta retorna
               // sem erro e não grava nada, e a fila é o contorno. Saber disso evita
@@ -251,6 +291,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
   );
 
   // ---------------------------------------------------------------- medição
+
 
   /** Decodifica uma vez por chamada — a mesma imagem costuma render várias medidas. */
   const carregarPng = (caminho) => {

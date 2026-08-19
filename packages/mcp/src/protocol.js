@@ -25,6 +25,24 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 
+/**
+ * Build do painel que este servidor espera encontrar instalado.
+ *
+ * ── Por que um número, e por que ele importa tanto ────────────────────────────
+ * O painel é um arquivo copiado à mão para dentro do After Effects, e a engine
+ * `vectorizeAE` só relê esse arquivo quando o aplicativo sobe. Ou seja: dá para
+ * corrigir um defeito, commitar, copiar o arquivo — e continuar rodando o código
+ * antigo, porque o AE não foi reiniciado.
+ *
+ * Isso já custou uma rodada inteira de diagnóstico: um aviso da fila de render que
+ * havia sido corrigido reapareceu, e a conclusão natural — "a correção está errada" —
+ * era falsa. A correção estava certa e não estava rodando.
+ *
+ * Suba este número junto com qualquer mudança no painel que o servidor precise
+ * enxergar. Divergência passa a ser um fato observável, não uma hipótese.
+ */
+export const PANEL_BUILD_ESPERADO = 4;
+
 export const CMD_DIR = "cmd";
 export const RES_DIR = "res";
 

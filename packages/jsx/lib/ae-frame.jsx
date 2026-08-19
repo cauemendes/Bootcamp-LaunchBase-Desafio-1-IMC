@@ -283,16 +283,52 @@ function vecSaveFrameViaQueue(comp, time, destino) {
  *   que permite descobrir, sem outra rodada de teste, se a API direta voltou a
  *   funcionar numa versão futura do After Effects.
  */
+/**
+ * Força resolução Full pela duração de uma operação, e devolve o que estava antes.
+ *
+ * ── Por que isto não é cosmético ──────────────────────────────────────────────
+ * O seletor de resolução do painel de composição é `comp.resolutionFactor`: Half é
+ * `[2,2]`, Third é `[3,3]`. Uma comp em Half exporta o frame com metade da largura e
+ * da altura — e o frame exportado é a régua de todas as medições feitas em cima dele.
+ *
+ * O resultado de errar isso é o pior tipo: nada falha. As medidas saem coerentes entre
+ * si e erradas por um fator constante, e a cena reconstruída sai proporcional e com
+ * metade do tamanho. Um designer trabalhando em Half para ganhar velocidade — o caso
+ * normal numa comp pesada — pagaria por isso sem nenhum aviso na tela.
+ */
+function vecForcarFull(comp) {
+  var antes = null;
+
+  try {
+    antes = comp.resolutionFactor;
+    if (antes && (antes[0] !== 1 || antes[1] !== 1)) comp.resolutionFactor = [1, 1];
+  } catch (e) {
+    // Sem acesso à propriedade, o melhor resultado aceitável é seguir sem a garantia.
+    return null;
+  }
+
+  return antes;
+}
+
+function vecRestaurarResolucao(comp, antes) {
+  if (!antes) return;
+  try {
+    comp.resolutionFactor = antes;
+  } catch (e) {}
+}
+
 vec.saveFrame = function (comp, time, destino) {
   var alinhado = vecSnapToFrame(comp, time);
   // A fila de render é a operação mais propensa a diálogo de todo o projeto, e era a
   // única sem esta proteção. Foi por aqui que um aviso de intervalo de tempo derrubou
   // a ponte no meio de uma tarefa.
   var silenciado = vec.suppressDialogs();
+  var resolucao = vecForcarFull(comp);
 
   try {
     return vecSaveFrameInterno(comp, alinhado, destino);
   } finally {
+    vecRestaurarResolucao(comp, resolucao);
     vec.restoreDialogs(silenciado);
   }
 };
