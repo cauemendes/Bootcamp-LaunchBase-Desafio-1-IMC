@@ -14,6 +14,10 @@ próprio Claude Code — este servidor só dá a ele mãos dentro do AE.
 
 ## Instalação
 
+Para quem vai **usar** a ferramenta, o guia é [`instalacao.md`](instalacao.md) — passo a
+passo, sem contexto de desenvolvimento. O que segue aqui é a mesma instalação com as
+razões de cada escolha, para quem mexe no código.
+
 ### 1. Dependências
 
 ```bash
@@ -42,10 +46,22 @@ nada que possa falhar em silêncio.
 bash scripts/install-bridge.sh
 ```
 
-⚠️ **Rode isso no Terminal.app, não pelo Claude Code.** O script copia para dentro
-do pacote do aplicativo e precisa de `sudo` — que não consegue pedir senha quando é
-um agente chamando. O script detecta e avisa, mas o caminho A evita o problema
-inteiro.
+Instala na pasta de painéis **do usuário**, não dentro do pacote do aplicativo. A
+diferença importa por três motivos: não pede senha de administrador, sobrevive a uma
+atualização do After Effects — a pasta do aplicativo é apagada junto —, e é o mesmo
+caminho para qualquer pessoa da equipe.
+
+O After Effects carrega painéis das duas pastas, e ter cópia nas duas é a pior situação
+possível: o aplicativo carrega uma, você confere o build na outra, e todo defeito já
+corrigido reaparece sem que nada aponte para a causa. O script instala numa só e remove
+a concorrente.
+
+```bash
+bash scripts/install-bridge.sh --doctor   # lista as cópias e os builds, sem instalar
+bash scripts/install-bridge.sh --app      # força a pasta do aplicativo (pede sudo)
+```
+
+`--doctor` é o primeiro comando a rodar diante de qualquer comportamento inexplicável.
 
 ### 3. A permissão que todo mundo esquece
 
