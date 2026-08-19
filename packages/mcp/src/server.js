@@ -208,6 +208,51 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
    * frame de 4K. Devolve null se não parecer um PNG — quem chama trata como "não sei",
    * que é diferente de "está errado".
    */
+  /**
+   * Diz se o frame é inútil para medir: uma cor só, do primeiro ao último pixel.
+   *
+   * ── Por que isto é a proteção mais importante do save_frame ──────────────────
+   * Um frame em branco não parece um erro. Ele chega como imagem válida, e quem for
+   * medir cor nele recebe respostas coerentes: preto em todo lugar. A cena reconstruída
+   * sai inteira em preto ou azul-escuro, com o desenho certo e a cor errada — e a
+   * primeira suspeita recai sobre a medição de cor, que está funcionando.
+   *
+   * Aconteceu: `timeSpanStart` fora do intervalo da comp fez a fila de render entregar
+   * quadro vazio, e o resultado foi uma reconstrução escura que parecia problema de
+   * paleta. O aviso do próprio After Effects dizia "Render will succeed, but may have
+   * blank frames" — e ninguém do lado de cá estava olhando para o pixel.
+   *
+   * A varredura sai no primeiro pixel diferente, então arte de verdade custa quase
+   * nada. Só o caso degenerado percorre a imagem inteira, e é justamente o que precisa
+   * de resposta certa.
+   */
+  const frameUniforme = (bytes) => {
+    let img;
+    try {
+      img = decodePng(
+        new Uint8Array(bytes),
+        (b) => new Uint8Array(zlib.inflateSync(Buffer.from(b)))
+      );
+    } catch {
+      // Não conseguir decodificar não é o mesmo que estar em branco.
+      return null;
+    }
+
+    const d = img.data;
+    if (d.length < 8) return null;
+
+    for (let i = 4; i < d.length; i += 4) {
+      if (d[i] !== d[0] || d[i + 1] !== d[1] || d[i + 2] !== d[2] || d[i + 3] !== d[3]) {
+        return null;
+      }
+    }
+
+    const hex = (v) => v.toString(16).padStart(2, "0");
+    return d[3] === 0
+      ? "totalmente transparente"
+      : `de uma cor só (#${hex(d[0])}${hex(d[1])}${hex(d[2])})`;
+  };
+
   const dimensoesPng = (bytes) => {
     // 8 bytes de assinatura + 4 de tamanho do chunk + 4 do tipo "IHDR" = 16.
     if (!bytes || bytes.length < 24) return null;
@@ -262,11 +307,22 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       const divergente =
         medidas && (medidas.width !== result.width || medidas.height !== result.height);
 
+      const uniforme = frameUniforme(bytes);
+
       return {
         content: [
           {
             type: "text",
             text:
+              (uniforme
+                ? `ATENÇÃO: o frame saiu ${uniforme} — não há desenho nenhum nele.\n\n` +
+                  "NÃO meça nada aqui e NÃO conclua nada sobre o resultado do que você " +
+                  "construiu. Medir cor num frame vazio devolve respostas coerentes e " +
+                  "erradas, e a cena sai com o desenho certo e a cor errada.\n\n" +
+                  "Causas conhecidas, em ordem: o tempo pedido cai fora do intervalo da " +
+                  "comp; a comp está vazia neste instante; as camadas estão desligadas. " +
+                  "Confirme o instante com describe_project antes de renderizar de novo.\n\n"
+                : "") +
               (divergente
                 ? `ATENÇÃO: o PNG saiu ${medidas.width}×${medidas.height}, mas a comp é ` +
                   `${result.width}×${result.height}. NÃO meça nada neste frame: toda ` +

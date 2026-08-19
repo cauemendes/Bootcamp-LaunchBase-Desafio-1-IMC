@@ -80,8 +80,8 @@ vec.buildSequence = function (plan, options) {
   var fps = plan.frameRate;
   var nome = vec.safeName(plan.name, "Master");
 
-  app.beginUndoGroup("Vectorize AE - " + nome);
   var silenciado = vec.suppressDialogs();
+  app.beginUndoGroup("Vectorize AE - " + nome);
 
   try {
     var existente = vecAcharComp(nome);

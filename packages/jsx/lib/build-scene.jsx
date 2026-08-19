@@ -64,8 +64,8 @@ function vecBuildScene(scene, options) {
 
   // Um único grupo de undo para a cena inteira: o usuário desfaz com um Ctrl+Z, e
   // não com um por camada.
-  app.beginUndoGroup("Vectorize AE - " + compName);
   var silenciado = vec.suppressDialogs();
+  app.beginUndoGroup("Vectorize AE - " + compName);
 
   try {
     var comp = vecResolveComp(scene.canvas, compName, options);

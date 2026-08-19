@@ -436,6 +436,43 @@ E confronte o tamanho do arquivo gerado com `comp.width`/`comp.height` de fora, 
 como ler o cabeçalho do PNG. Se houver outra causa além da resolução, ela aparece como
 aviso em vez de cena torta.
 
+### Confira também se o frame tem desenho
+
+Frame em branco não parece erro: chega como imagem válida, e medir cor nele devolve
+respostas coerentes — preto em todo lugar. A cena sai com o desenho certo e a cor errada,
+e a suspeita recai sobre a medição de cor, que está funcionando.
+
+Uma varredura que sai no primeiro pixel diferente custa quase nada em arte de verdade, e
+só percorre a imagem inteira no caso degenerado — que é justamente o que precisa de
+resposta certa. Sem tolerância: um pixel diferente já é desenho, e qualquer margem aqui
+rejeitaria arte legítima de fundo quase uniforme.
+
+## Grupo de undo não aninha
+
+Um `beginUndoGroup` aberto e não fechado — ou um `endUndoGroup` a mais — faz o After
+Effects abrir `Undo group mismatch, will attempt to fix`. É diálogo modal, com todas as
+consequências da seção sobre diálogo: congela a thread do polling e derruba a ponte.
+
+Duas regras:
+
+**Nada entre `beginUndoGroup` e o `try`.** Qualquer linha ali pode lançar e deixar o grupo
+aberto para sempre.
+
+```javascript
+var silenciado = vec.suppressDialogs();   // antes
+app.beginUndoGroup(rotulo);
+try { trabalho(); } finally { app.endUndoGroup(); }
+```
+
+**Não embrulhe código arbitrário num grupo de undo.** Se o código avaliado chamar
+`endUndoGroup`, ele fecha o *seu* grupo, e o seu `finally` fecha um que não existe mais.
+Não há API para consultar profundidade de undo, então não dá para detectar depois — recuse
+antes, olhando o texto do código:
+
+```javascript
+if (args.code.indexOf("UndoGroup") !== -1) throw new Error("...");
+```
+
 ## Painel copiado não é painel rodando
 
 A engine de `#targetengine` só relê o arquivo do painel quando o After Effects sobe.

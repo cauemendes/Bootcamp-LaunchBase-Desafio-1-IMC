@@ -1953,8 +1953,8 @@ vec.applyAnimation = function (tracks, options) {
   var aplicadas = 0;
   var keyframes = 0;
 
-  app.beginUndoGroup("Vectorize AE - animation");
   var silenciado = vec.suppressDialogs();
+  app.beginUndoGroup("Vectorize AE - animation");
 
   try {
     for (var i = 0; i < tracks.length; i++) {
@@ -2271,8 +2271,8 @@ vec.buildSequence = function (plan, options) {
   var fps = plan.frameRate;
   var nome = vec.safeName(plan.name, "Master");
 
-  app.beginUndoGroup("Vectorize AE - " + nome);
   var silenciado = vec.suppressDialogs();
+  app.beginUndoGroup("Vectorize AE - " + nome);
 
   try {
     var existente = vecAcharComp(nome);
@@ -2448,8 +2448,8 @@ function vecBuildScene(scene, options) {
 
   // Um único grupo de undo para a cena inteira: o usuário desfaz com um Ctrl+Z, e
   // não com um por camada.
-  app.beginUndoGroup("Vectorize AE - " + compName);
   var silenciado = vec.suppressDialogs();
+  app.beginUndoGroup("Vectorize AE - " + compName);
 
   try {
     var comp = vecResolveComp(scene.canvas, compName, options);
@@ -2776,6 +2776,25 @@ vec.tools.execute_script = function (args) {
   args = args || {};
   if (typeof args.code !== "string" || args.code === "") {
     throw new Error("execute_script precisa de `code`.");
+  }
+
+  // ── Por que recusar em vez de tolerar ───────────────────────────────────────
+  // Esta função embrulha o código em um grupo de undo, para o usuário desfazer tudo com
+  // um Ctrl+Z. Grupo de undo no After Effects não aninha: se o código avaliado abrir o
+  // seu, ou fechar o nosso, o balanço quebra e o AE mostra "Undo group mismatch, will
+  // attempt to fix" — um diálogo modal, que congela a thread do polling e derruba a
+  // ponte no meio da tarefa.
+  //
+  // Não há API para consultar profundidade de undo, então não dá para detectar depois.
+  // Recusar antes é a única defesa, e é barata.
+  if (args.code.indexOf("UndoGroup") !== -1) {
+    throw new Error(
+      "Este código chama beginUndoGroup ou endUndoGroup, e execute_script já embrulha " +
+        "tudo o que você manda num único grupo de undo. Grupo de undo não aninha no " +
+        "After Effects: abrir ou fechar um aqui quebra o balanço e faz o AE abrir um " +
+        "diálogo modal, que trava a ponte. Remova essas chamadas — o undo em um passo " +
+        "já está garantido."
+    );
   }
 
   var rotulo = args.label || "Vectorize AE - script";
