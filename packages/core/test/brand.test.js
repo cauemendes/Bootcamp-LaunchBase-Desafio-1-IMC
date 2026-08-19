@@ -169,7 +169,38 @@ test("família que não é token da marca passa direto", () => {
   assert.equal(scene.elements[0].shape.fontFamily, "Futura");
 });
 
-test("texto sem fonte cai no fallback, com aviso", () => {
+test("texto sem fonte usa a fonte da marca, não Arial", () => {
+  // ── Por que não cair no fallback ─────────────────────────────────────────────
+  // Com a marca configurada, cair em Arial é jogar fora a única informação confiável
+  // disponível: a fonte do cliente está ali, declarada. Num quadro com dez rótulos,
+  // basta o modelo esquecer o campo em um deles para aparecer uma tipografia estranha
+  // no meio da arte — e é dos erros que ninguém procura, porque parece escolha de quem
+  // montou.
+  const { scene, warnings } = applyBrand(
+    cena([{ shape: { type: "text", x: 0, y: 0, fontSize: 24, content: "oi" } }]),
+    MARCA
+  );
+
+  // `body` e não `heading`: texto sem indicação é corpo de texto, não título.
+  assert.equal(scene.elements[0].shape.fontFamily, "ABC Diatype");
+  assert.equal(scene.elements[0].shape.weight, "Regular");
+
+  // O aviso diz quais tokens existem, senão a próxima vez erra igual.
+  assert.match(warnings.join(" "), /texto sem fonte/);
+  assert.match(warnings.join(" "), /heading/);
+});
+
+test("sem `body`, usa a primeira fonte da marca", () => {
+  const { scene } = applyBrand(
+    cena([{ shape: { type: "text", x: 0, y: 0, fontSize: 24, content: "oi" } }]),
+    { name: "X", fonts: { titulo: { family: "Ember Modern Display", style: "Bold" } } }
+  );
+
+  assert.equal(scene.elements[0].shape.fontFamily, "Ember Modern Display");
+  assert.equal(scene.elements[0].shape.weight, "Bold");
+});
+
+test("marca sem fonte nenhuma cai no fallback, com aviso", () => {
   const { scene, warnings } = applyBrand(
     cena([{ shape: { type: "text", x: 0, y: 0, fontSize: 24, content: "oi" } }]),
     { colors: { primary: "#fff" } }
@@ -179,10 +210,10 @@ test("texto sem fonte cai no fallback, com aviso", () => {
   assert.match(warnings.join(" "), /texto sem fonte/);
 });
 
-test("fallbackFont da marca substitui o padrão", () => {
+test("fallbackFont da marca substitui o padrão quando não há fontes", () => {
   const { scene } = applyBrand(
     cena([{ shape: { type: "text", x: 0, y: 0, fontSize: 24, content: "oi" } }]),
-    { ...MARCA, fallbackFont: "Helvetica" }
+    { name: "X", colors: { primary: "#fff" }, fallbackFont: "Helvetica" }
   );
 
   assert.equal(scene.elements[0].shape.fontFamily, "Helvetica");

@@ -300,6 +300,32 @@ export function applyBrand(scene, brand, { snapColors = true } = {}) {
       return shape;
     }
 
+    // ── Sem fonte declarada, a marca ainda tem palpite melhor que Arial ────────
+    // Cair no fallback com a marca configurada era jogar fora a única informação
+    // confiável disponível: a fonte do cliente está ali, declarada, e o texto saía em
+    // Arial. Num quadro com dez rótulos, basta o modelo esquecer o campo em um deles
+    // para aparecer uma tipografia estranha no meio da arte — e o erro é dos que
+    // ninguém procura, porque parece escolha de quem montou.
+    //
+    // A preferência é `body`: texto sem indicação é corpo de texto, não título. Só
+    // depois disso é que Arial entra, e aí é porque a marca não tem fonte nenhuma.
+    const padrao = b.fonts.get("body") ?? [...b.fonts.values()][0];
+
+    if (padrao) {
+      applied.fonts++;
+      warnings.push(
+        `${onde}: texto sem fonte — usando ${padrao.family}` +
+          (padrao.style ? ` ${padrao.style}` : "") +
+          ", da marca. Declare fontFamily para escolher entre os tokens disponíveis" +
+          (b.fonts.size > 1 ? ` (${[...b.fonts.keys()].join(", ")})` : "") +
+          "."
+      );
+
+      return padrao.style
+        ? { ...shape, fontFamily: padrao.family, weight: shape.weight || padrao.style }
+        : { ...shape, fontFamily: padrao.family };
+    }
+
     warnings.push(`${onde}: texto sem fonte — usando ${b.fallbackFont}`);
     return { ...shape, fontFamily: b.fallbackFont };
   };
