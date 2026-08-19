@@ -72,6 +72,37 @@ DIR_APP="$AE_APP/Scripts/ScriptUI Panels"
 
 echo "▸ After Effects: $AE_APP"
 
+# ── Este script não pode participar de um downgrade silencioso ─────────────────
+# O caso real: `git pull` abortou porque `dist/` estava sujo, e o instalador rodou em
+# seguida, na mesma linha de comando, e instalou a versão antiga com um "✓" no fim.
+# Quem leu a saída de baixo para cima viu sucesso. Dizer de qual commit veio o que foi
+# instalado é barato e transforma isso em algo conferível.
+if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+  COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  echo "▸ Repositório: commit $COMMIT"
+
+  # `dist/` é gerado, e até agora era gerado por este script — o que travava o pull
+  # seguinte. Se ainda estiver sujo de uma execução antiga, o pull vai continuar
+  # falhando até alguém desfazer.
+  if ! git -C "$REPO_ROOT" diff --quiet -- dist/bridge-panel.jsx 2>/dev/null; then
+    cat <<AVISO
+
+  ⚠️  dist/bridge-panel.jsx está modificado na árvore de trabalho.
+
+      Ele é gerado, então a modificação é resto de uma instalação antiga — e é o que
+      faz o git pull abortar com "your local changes would be overwritten". Enquanto
+      isso não for desfeito, cada pull falha e cada instalação seguinte reinstala a
+      versão que já estava aqui.
+
+      Desfaça e puxe de novo:
+
+        git -C "$REPO_ROOT" checkout -- dist/bridge-panel.jsx
+        git -C "$REPO_ROOT" pull
+
+AVISO
+  fi
+fi
+
 # ---- relatório ---------------------------------------------------------------
 
 # Lê o número de build de uma cópia instalada. É a única forma de saber o que o
@@ -139,8 +170,20 @@ fi
 # de //@include muda de comportamento dependendo de onde o script está — e quando
 # falha, falha em silêncio: o painel abre, a interface aparece, e só na primeira
 # chamada é que se descobre que as funções não existem.
+#
+# ── Por que num arquivo temporário, e não em dist/ ──────────────────────────────
+# `dist/bridge-panel.jsx` é versionado, para quem não quer construir nada poder usar
+# File → Scripts → Run Script File direto do repositório. Gerar por cima dele aqui
+# sujava a árvore de trabalho a cada instalação — e o `git pull` seguinte abortava com
+# "your local changes would be overwritten".
+#
+# O estrago disso é maior que o incômodo: o pull falha, o instalador roda em seguida na
+# mesma linha de comando e instala alegremente a versão ANTIGA, com um "✓ instalado" no
+# fim. A pessoa fica com a impressão de estar atualizada, e o defeito que a versão nova
+# corrige continua acontecendo.
 echo "▸ Empacotando o painel num arquivo só…"
-BUNDLE="$REPO_ROOT/dist/bridge-panel.jsx"
+BUNDLE="$(mktemp "${TMPDIR:-/tmp}/vectorize-bridge-panel.XXXXXX")"
+trap 'rm -f "$BUNDLE"' EXIT
 node "$REPO_ROOT/scripts/bundle-jsx.mjs" "$JSX_DIR/bridge-panel.jsx" "$BUNDLE"
 BUILD="$(build_de "$BUNDLE")"
 
