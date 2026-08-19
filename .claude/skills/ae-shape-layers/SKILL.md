@@ -179,3 +179,21 @@ O que resta, em ordem de esforço:
    o resultado.
 
 Nenhuma é boa o bastante para entrar no formato sem uma decisão consciente.
+
+## Stroke é sempre centrado no path
+
+O After Effects não tem alinhamento de stroke. Metade da espessura cai para fora da forma,
+metade para dentro, e não há propriedade que mude isso.
+
+Isso importa ao reconstruir arte vinda de ferramenta de design, onde alinhamento existe e
+*inside* é o padrão de caixa e botão no Figma e no Illustrator. Copiar tamanho e espessura
+sem compensar engorda a forma em uma espessura inteira: uma caixa de 200px com stroke
+inside de 8px ocupa 200px na origem e 208px no AE. O traço parece mais grosso do que é,
+mesmo com a largura correta — e o sintoma relatado por quem olha é "o stroke ficou grosso",
+que manda procurar no lugar errado.
+
+Para um stroke que era inside, encolha a forma em uma espessura e mantenha a largura:
+`width - w`, `height - w`, posição deslocada em `w/2`.
+
+Em contornos concêntricos o erro se acumula a cada nível, e o espaço entre eles é onde
+aparece primeiro.

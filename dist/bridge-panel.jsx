@@ -1448,13 +1448,19 @@ function vecPastaDeFrames() {
 /**
  * Apaga frames velhos.
  *
- * Cada `save_frame` deixa um PNG de tela cheia, e o lado Node lê sem apagar. Uma
- * sessão de trabalho longa acumularia centenas de megabytes numa pasta que ninguém
- * olha. Uma hora é folga suficiente: o modelo lê o frame segundos depois de gerá-lo.
+ * ── Por que a janela é curta ──────────────────────────────────────────────────
+ * Cada `save_frame` deixa um PNG de tela cheia, e ele não pode ser apagado na hora: o
+ * `measure_image` lê esse mesmo arquivo em seguida, e é dele que saem todas as medidas.
+ * Apagar cedo quebraria a reconstrução; deixar acumular enche a máquina de quem usa com
+ * megabytes num diretório que ninguém abre.
+ *
+ * Cinco minutos resolve os dois lados. Um ciclo de renderizar e medir leva segundos, e
+ * um punhado de frames é o máximo que chega a coexistir — o suficiente também para
+ * comparar dois ou três instantes de uma animação, que é o outro uso legítimo.
  */
 function vecLimparFramesVelhos(pasta) {
   try {
-    var limite = new Date().getTime() - 3600 * 1000;
+    var limite = new Date().getTime() - 300 * 1000;
     var arquivos = pasta.getFiles();
 
     for (var i = 0; i < arquivos.length; i++) {
@@ -2971,7 +2977,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 4;
+var VEC_PANEL_BUILD = 5;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
@@ -3959,23 +3965,38 @@ function vecBridgeDiagnostico() {
     win.alignChildren = ["fill", "top"];
     win.spacing = 8;
     win.margins = 12;
+    win.minimumSize = [180, 160];
 
     var topo = win.add("group");
     topo.alignChildren = ["left", "center"];
     topo.alignment = ["fill", "top"];
 
-    var status = topo.add("statictext", undefined, "parado");
+    // `truncate` evita que uma mensagem longa force o painel a ficar largo: com o painel
+    // estreito o texto é cortado, em vez de o layout empurrar as bordas para fora.
+    var status = topo.add("statictext", undefined, "parado", { truncate: "end" });
     status.alignment = ["fill", "center"];
+    status.minimumSize.width = 40;
 
     var toggle = topo.add("button", undefined, "Iniciar");
+    // Largura fixa: o rótulo alterna entre "Iniciar" e "Parar", e sem isto o botão muda
+    // de tamanho a cada clique, empurrando o status de um lado para o outro.
     toggle.preferredSize.width = 80;
+    toggle.minimumSize.width = 80;
 
     var logBox = win.add("edittext", undefined, "", { multiline: true, readonly: true, scrolling: true });
-    logBox.preferredSize.height = 180;
+
+    // ── Por que minimumSize e não preferredSize ─────────────────────────────────
+    // `preferredSize.height = 180` era um piso disfarçado: o ScriptUI monta o layout a
+    // partir do tamanho preferido dos filhos, então o painel não conseguia ficar menor
+    // que isso e o conteúdo era cortado em vez de encolher. `minimumSize` diz o mínimo
+    // de verdade, e `preferredSize` fica só como sugestão de tamanho inicial.
+    logBox.minimumSize = [120, 48];
+    logBox.preferredSize = [260, 160];
     logBox.alignment = ["fill", "fill"];
 
     var rodape = win.add("group");
     rodape.alignment = ["fill", "bottom"];
+    rodape.spacing = 6;
     var diagnostico = rodape.add("button", undefined, "Diagnóstico");
     diagnostico.alignment = ["fill", "bottom"];
     var abrirPasta = rodape.add("button", undefined, "Abrir pasta");
@@ -4035,8 +4056,17 @@ function vecBridgeDiagnostico() {
       }
     };
 
+    // ── Redimensionamento ───────────────────────────────────────────────────────
+    // `onResizing` dispara durante o arraste e `onResize` no fim; painel encaixado usa o
+    // segundo, janela flutuante os dois. `layout.resize()` reaproveita o layout já
+    // montado para a nova área — é o que faz o log crescer junto com o painel.
+    //
+    // Em try porque isto é evento de UI: uma exceção aqui, num painel que o After
+    // Effects está redimensionando, aparece como diálogo de erro no meio do arraste.
     win.onResizing = win.onResize = function () {
-      this.layout.resize();
+      try {
+        this.layout.resize();
+      } catch (e) {}
     };
 
     win.onClose = function () {

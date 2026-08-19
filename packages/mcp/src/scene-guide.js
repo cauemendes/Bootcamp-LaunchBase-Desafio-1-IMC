@@ -147,6 +147,28 @@ comprimento do trecho de cor sólida é a espessura, sem os pixels de transiçã
 dúvida entre dois valores, escolha o menor: traço fino demais passa despercebido,
 grosso demais salta aos olhos.
 
+**No After Effects o stroke é centrado no path, e isso não se configura.** Metade da
+espessura cai para fora da forma, metade para dentro. Ferramentas de design têm
+alinhamento de stroke — no Figma e no Illustrator o padrão de caixa e botão costuma ser
+*inside* —, e ali a espessura toda fica dentro da borda.
+
+A consequência é que copiar tamanho e espessura sem compensar engorda a forma em uma
+espessura inteira, e o traço parece mais grosso do que é mesmo estando com a largura
+certa. Uma caixa de 200px com stroke *inside* de 8px ocupa 200px na arte original e
+208px reconstruída.
+
+Compensando: quando o traço da arte parece encostar por dentro da borda — o caso comum
+—, encolha a forma em uma espessura e mantenha a largura medida.
+
+\`\`\`json
+{ "shape": { "type": "rect", "x": 104, "y": 104, "width": 192, "height": 192 },
+  "stroke": { "color": "#111111", "width": 8 } }
+\`\`\`
+
+Isto vale em dobro para contornos concêntricos, do tipo caixa dentro de caixa: o erro se
+acumula a cada nível, e o espaço entre os dois contornos é o primeiro lugar onde ele
+aparece.
+
 **Marca antes de cor medida.** Chame \`describe_brand\` antes de construir. Havendo
 marca configurada, escreva o nome no lugar do hexadecimal:
 

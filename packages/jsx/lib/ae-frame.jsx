@@ -47,13 +47,19 @@ function vecPastaDeFrames() {
 /**
  * Apaga frames velhos.
  *
- * Cada `save_frame` deixa um PNG de tela cheia, e o lado Node lê sem apagar. Uma
- * sessão de trabalho longa acumularia centenas de megabytes numa pasta que ninguém
- * olha. Uma hora é folga suficiente: o modelo lê o frame segundos depois de gerá-lo.
+ * ── Por que a janela é curta ──────────────────────────────────────────────────
+ * Cada `save_frame` deixa um PNG de tela cheia, e ele não pode ser apagado na hora: o
+ * `measure_image` lê esse mesmo arquivo em seguida, e é dele que saem todas as medidas.
+ * Apagar cedo quebraria a reconstrução; deixar acumular enche a máquina de quem usa com
+ * megabytes num diretório que ninguém abre.
+ *
+ * Cinco minutos resolve os dois lados. Um ciclo de renderizar e medir leva segundos, e
+ * um punhado de frames é o máximo que chega a coexistir — o suficiente também para
+ * comparar dois ou três instantes de uma animação, que é o outro uso legítimo.
  */
 function vecLimparFramesVelhos(pasta) {
   try {
-    var limite = new Date().getTime() - 3600 * 1000;
+    var limite = new Date().getTime() - 300 * 1000;
     var arquivos = pasta.getFiles();
 
     for (var i = 0; i < arquivos.length; i++) {

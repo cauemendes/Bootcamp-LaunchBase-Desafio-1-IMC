@@ -41,7 +41,7 @@ import crypto from "node:crypto";
  * Suba este número junto com qualquer mudança no painel que o servidor precise
  * enxergar. Divergência passa a ser um fato observável, não uma hipótese.
  */
-export const PANEL_BUILD_ESPERADO = 4;
+export const PANEL_BUILD_ESPERADO = 5;
 
 export const CMD_DIR = "cmd";
 export const RES_DIR = "res";
@@ -147,6 +147,49 @@ export function consumeJson(filePath, { tolerateIncomplete = false } = {}) {
   }
 
   return parsed;
+}
+
+/**
+ * Apaga PNGs de frame que ninguém mais vai ler.
+ *
+ * ── Por que não apagar tudo ───────────────────────────────────────────────────
+ * O frame não pode ser apagado assim que é lido: `measure_image` abre o mesmo arquivo
+ * em seguida, e é dele que saem todas as medidas. Então ele sobrevive alguns minutos —
+ * e sobreviver é o que enche a pasta de quem usa a ferramenta um dia inteiro.
+ *
+ * Limpar no início de cada sessão fecha a conta. Com uma ressalva: pode haver outra
+ * sessão rodando ao mesmo tempo, em outra conversa, com um frame recém-renderizado
+ * esperando para ser medido. Apagar a pasta inteira arrancaria o chão dela. Por isso
+ * a idade mínima, curta o bastante para não deixar lixo e longa o bastante para não
+ * atropelar vizinho.
+ *
+ * @returns {number} quantos arquivos foram removidos
+ */
+export function clearFrames(dir, maxAgeMs = 120_000) {
+  const pasta = path.join(dir, "frames");
+  const now = Date.now();
+  let removed = 0;
+
+  let entries;
+  try {
+    entries = fs.readdirSync(pasta);
+  } catch {
+    return 0;
+  }
+
+  for (const name of entries) {
+    const file = path.join(pasta, name);
+    try {
+      if (now - fs.statSync(file).mtimeMs > maxAgeMs) {
+        fs.unlinkSync(file);
+        removed++;
+      }
+    } catch {
+      // Sumiu no meio do caminho — segue.
+    }
+  }
+
+  return removed;
 }
 
 /**

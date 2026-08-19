@@ -10,6 +10,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { Bridge } from "../src/bridge.js";
+import { clearFrames } from "../src/protocol.js";
 import { createServer } from "../src/server.js";
 
 const bridge = new Bridge();
@@ -19,6 +20,13 @@ const bridge = new Bridge();
 const descartados = bridge.cleanup();
 if (descartados > 0) {
   console.error(`[vectorize-ae] descartei ${descartados} arquivo(s) de sessão anterior`);
+}
+
+// Frames de sessões anteriores não interessam a ninguém, e cada um custa alguns
+// megabytes. Ver `clearFrames` para o motivo de haver idade mínima.
+const frames = clearFrames(bridge.dir);
+if (frames > 0) {
+  console.error(`[vectorize-ae] apaguei ${frames} frame(s) de sessão anterior`);
 }
 
 console.error(`[vectorize-ae] ponte em ${bridge.dir}`);

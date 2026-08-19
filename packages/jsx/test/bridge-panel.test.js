@@ -46,6 +46,7 @@ function widget(tipo, texto) {
     text: texto === undefined ? "" : texto,
     alignment: null,
     preferredSize: { width: 0, height: 0 },
+    minimumSize: { width: 0, height: 0 },
     textselection: "",
     onClick: null,
     add: (t, _b, tx) => widget(t, tx),
@@ -59,7 +60,13 @@ function janela() {
     alignChildren: null,
     spacing: 0,
     margins: 0,
-    layout: { layout() {}, resize() {} },
+    resizes: 0,
+    layout: {
+      layout() {},
+      resize() {
+        w.resizes++;
+      },
+    },
     center() {},
     show() {},
     close() {
@@ -633,6 +640,47 @@ test("o supervisor não reanima um polling que está apenas em recuo", () => {
   host.api.supervisor();
 
   assert.equal(estado.revivals, 0);
+});
+
+test("o painel se adapta ao tamanho que o usuário deixar", () => {
+  // `preferredSize.height = 180` no log era um piso disfarçado: o ScriptUI monta o
+  // layout a partir do tamanho preferido dos filhos, então o painel não encolhia abaixo
+  // disso e o conteúdo era cortado em vez de se ajustar.
+  const host = abrirAE();
+  const { logBox, win } = widgetsDo(host, 0);
+
+  assert.equal(logBox.alignment[0], "fill");
+  assert.equal(logBox.alignment[1], "fill", "o log tem que crescer nos dois eixos");
+  assert.ok(logBox.minimumSize[1] < 180, "sem piso de 180px");
+
+  // Arrastar a borda chama o layout de novo; sem isso o conteúdo fica do tamanho antigo.
+  const antes = win.resizes;
+  win.onResize();
+  win.onResizing();
+
+  assert.equal(win.resizes, antes + 2);
+});
+
+test("erro no redimensionamento não vira diálogo no meio do arraste", () => {
+  const host = abrirAE();
+  const { win } = widgetsDo(host, 0);
+
+  win.layout.resize = () => {
+    throw new Error("layout quebrado");
+  };
+
+  // Evento de UI que lança durante um arraste do After Effects aparece como diálogo de
+  // erro — e diálogo trava a ponte.
+  assert.doesNotThrow(() => win.onResize());
+});
+
+test("o botão não muda de largura ao alternar o rótulo", () => {
+  // "Iniciar" e "Parar" têm larguras diferentes; sem largura fixa o status é empurrado
+  // de um lado para o outro a cada clique.
+  const host = abrirAE();
+  const { toggle } = widgetsDo(host, 0);
+
+  assert.equal(toggle.minimumSize.width, toggle.preferredSize.width);
 });
 
 test("o supervisor reanima o polling e conta a reanimação", () => {
