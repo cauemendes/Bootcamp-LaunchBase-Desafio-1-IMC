@@ -54,27 +54,66 @@ if ($.global.vecBridgeSupervisorId !== undefined && $.global.vecBridgeSupervisor
   $.global.vecBridgeSupervisorId = null;
 }
 
-var vecBridge = {
-  running: false,
-  taskId: null,
-  processed: 0,
-  errors: 0,
-  ui: null,
-  log: [],
-  lastHeartbeat: 0,
-  lastPoll: 0,
-  cycles: 0,
-  supervisorId: null,
-  revivals: 0,
-  startedAt: 0,
-  // O auto-início é adiado (ver o fim do arquivo). Um clique no botão é decisão
-  // explícita do usuário e cancela o agendamento pendente.
-  autoStart: true,
-  avisouHeartbeat: false,
-  // null = ainda não sei se dá pra escrever dentro de res/. Ver vecWriteResult().
-  resSubpastaOk: null,
-  POLL_MS: 350,
-};
+// Também há um auto-início pendente (ver o fim do arquivo). Uma carga nova não pode
+// deixar o agendamento da anterior de pé, ou dois deles brigam para iniciar a ponte.
+if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId !== null) {
+  try {
+    app.cancelTask($.global.vecBridgeAutoStartId);
+  } catch (e) {}
+  $.global.vecBridgeAutoStartId = null;
+}
+
+/**
+ * O estado vive em `$.global`, não numa `var` deste arquivo.
+ *
+ * ── O defeito que isto conserta ───────────────────────────────────────────────
+ * `var vecBridge = {...}` era refeito a cada carga do arquivo. Duas cargas na mesma
+ * engine — o painel encaixado mais um flutuante, ou fechar e reabrir a aba — davam
+ * dois objetos de estado, e o segundo apagava as contas do primeiro: `cycles` voltava
+ * a zero, `running` voltava a false com o polling ainda rodando.
+ *
+ * Pior, `ui` era **um slot só**. O último painel carregado tomava o slot, e daí em
+ * diante todo `vecBridgeStatus` e todo texto de botão iam para aquele painel — não
+ * para o painel em que a pessoa clicou. O sintoma na tela era o pior possível: clicar
+ * em Iniciar e o botão não mudar, sem erro nenhum, como se o clique tivesse sumido.
+ *
+ * `SCHEMA` existe porque uma versão nova deste arquivo pode carregar numa engine que
+ * já tem o estado antigo, sem os campos novos. Aí é melhor recomeçar do zero do que
+ * rodar com metade da estrutura.
+ */
+var VEC_BRIDGE_SCHEMA = 2;
+
+if (!$.global.vecBridgeState || $.global.vecBridgeState.schema !== VEC_BRIDGE_SCHEMA) {
+  $.global.vecBridgeState = {
+    schema: VEC_BRIDGE_SCHEMA,
+    running: false,
+    taskId: null,
+    processed: 0,
+    errors: 0,
+    // Registro de painéis abertos, não um slot. Ver `vecBridgeCadaUI`.
+    uis: [],
+    log: [],
+    lastHeartbeat: 0,
+    lastPoll: 0,
+    cycles: 0,
+    supervisorId: null,
+    revivals: 0,
+    startedAt: 0,
+    // O auto-início é adiado (ver o fim do arquivo). Um clique no botão é decisão
+    // explícita do usuário e cancela o agendamento pendente.
+    autoStart: true,
+    avisouHeartbeat: false,
+    // null = ainda não sei se dá pra escrever dentro de res/. Ver vecWriteResult().
+    resSubpastaOk: null,
+    POLL_MS: 350,
+  };
+}
+
+var vecBridge = $.global.vecBridgeState;
+
+// Uma carga nova sempre reabre a possibilidade de auto-iniciar: se o arquivo está
+// sendo executado, alguém abriu o painel agora.
+vecBridge.autoStart = true;
 
 /**
  * Pasta compartilhada com o servidor.
@@ -97,6 +136,30 @@ function vecBridgeDir() {
 
 // ---------------------------------------------------------------- ponte
 
+/**
+ * Aplica algo a todos os painéis abertos, e esquece os que morreram.
+ *
+ * Escrever numa widget de painel já destruído lança. Antes de existir o registro isso
+ * era um risco só; com N painéis passa a ser certeza, porque fechar uma aba não avisa
+ * ninguém. Cada escrita que falha remove aquele painel da lista — a UI se limpa sozinha
+ * em vez de precisar de bookkeeping perfeito no fechamento.
+ */
+function vecBridgeCadaUI(fn) {
+  var vivos = [];
+
+  for (var i = 0; i < vecBridge.uis.length; i++) {
+    var ui = vecBridge.uis[i];
+    try {
+      fn(ui);
+      vivos.push(ui);
+    } catch (e) {
+      // Painel morto. Não entra em `vivos`, e portanto sai do registro.
+    }
+  }
+
+  vecBridge.uis = vivos;
+}
+
 function vecBridgeLog(message) {
   var hora = new Date().toTimeString().substring(0, 8);
   vecBridge.log.push(hora + "  " + message);
@@ -104,20 +167,62 @@ function vecBridgeLog(message) {
   // Um painel aberto o dia inteiro acumularia milhares de linhas.
   if (vecBridge.log.length > 60) vecBridge.log.shift();
 
-  if (vecBridge.ui && vecBridge.ui.logBox) {
-    vecBridge.ui.logBox.text = vecBridge.log.join("\n");
+  var texto = vecBridge.log.join("\n");
+
+  vecBridgeCadaUI(function (ui) {
+    ui.logBox.text = texto;
     // Sem isso o usuário fica olhando o começo do log enquanto o interessante
     // acontece no fim.
     try {
-      vecBridge.ui.logBox.textselection = "";
+      ui.logBox.textselection = "";
     } catch (e) {}
-  }
+  });
+}
+
+/**
+ * Descreve um erro sem nunca poder lançar.
+ *
+ * ── Por que isto não é paranoia ───────────────────────────────────────────────
+ * O painel tem três camadas de captura, e todas as três chamavam `vec.describeError(e)`
+ * ao montar a mensagem. O argumento é avaliado antes da chamada, então se
+ * `describeError` lançasse — `vec` não carregado, uma versão sem o método —, a exceção
+ * escapava do catch que devia relatá-la, subia para o catch de cima, lançava de novo
+ * ali, e terminava no `catch (e2) {}` que engole. Resultado: a falha original
+ * desaparecia sem uma linha de log.
+ *
+ * Um relator de erro que pode lançar não é um relator de erro.
+ */
+function vecBridgeMotivo(e) {
+  try {
+    return vec.describeError(e);
+  } catch (semVec) {}
+
+  try {
+    return String(e);
+  } catch (semString) {}
+
+  return "erro que não consegui descrever";
 }
 
 function vecBridgeStatus(text) {
-  if (vecBridge.ui && vecBridge.ui.status) {
-    vecBridge.ui.status.text = text;
-  }
+  vecBridgeCadaUI(function (ui) {
+    ui.status.text = text;
+  });
+}
+
+/**
+ * Sincroniza o rótulo do botão em todos os painéis com o estado real da ponte.
+ *
+ * Existe como função própria porque `running` pode mudar sem clique — o supervisor
+ * reanima, uma carga nova assume o estado — e um botão dizendo "Iniciar" com a ponte
+ * ligada é pior que inútil: convida o usuário a desligar pensando que está ligando.
+ */
+function vecBridgeRefreshUI() {
+  var rotulo = vecBridge.running ? "Parar" : "Iniciar";
+
+  vecBridgeCadaUI(function (ui) {
+    ui.toggle.text = rotulo;
+  });
 }
 
 /**
@@ -350,7 +455,7 @@ function vecBridgeHeartbeat(dirs, forcar) {
     if (!tmp.rename("heartbeat.json")) vecBridgeAvisoHeartbeat("rename devolveu false");
   } catch (e) {
     // Heartbeat é diagnóstico; falhar aqui não pode derrubar o polling.
-    vecBridgeAvisoHeartbeat(vec.describeError(e));
+    vecBridgeAvisoHeartbeat(vecBridgeMotivo(e));
   }
 }
 
@@ -401,7 +506,7 @@ function vecRespostaDeEmergencia(dirs, id, motivo) {
     f.close();
     vecBridgeLog("       emergência: resposta de erro gravada na raiz — escrever arquivo funciona");
   } catch (e) {
-    vecBridgeLog("       emergência falhou também: " + vec.describeError(e));
+    vecBridgeLog("       emergência falhou também: " + vecBridgeMotivo(e));
   }
 }
 
@@ -435,7 +540,7 @@ function vecBridgePoll() {
     // Log em try próprio: se a UI foi destruída, escrever nela lança — e essa exceção
     // seria justamente a que mata a tarefa.
     try {
-      vecBridgeLog("erro no ciclo de polling (a ponte continua): " + vec.describeError(e));
+      vecBridgeLog("erro no ciclo de polling (a ponte continua): " + vecBridgeMotivo(e));
     } catch (e2) {}
   }
 }
@@ -478,13 +583,13 @@ function vecBridgePollInterno() {
       // empacotado num arquivo só, a linha aponta direto para a instrução culpada —
       // que é a diferença entre corrigir e continuar chutando. `e.toString()`
       // sozinho, que era o que estava aqui, esconde justamente isso.
-      vecBridgeLog("falhei ao responder: " + vec.describeError(e));
+      vecBridgeLog("falhei ao responder: " + vecBridgeMotivo(e));
 
       try {
         vecBridgeLog("       pilha: " + String($.stack).replace(/\n/g, " ‹ ").substring(0, 300));
       } catch (eStack) {}
 
-      vecRespostaDeEmergencia(dirs, comando.id, vec.describeError(e));
+      vecRespostaDeEmergencia(dirs, comando.id, vecBridgeMotivo(e));
       vecBridge.errors++;
       continue;
     }
@@ -582,7 +687,7 @@ function vecBridgeStart() {
   vecBridgeStatus("ouvindo");
   vecBridgeLog("ponte ativa em " + dirs.base.fsName);
 
-  if (vecBridge.ui && vecBridge.ui.toggle) vecBridge.ui.toggle.text = "Parar";
+  vecBridgeRefreshUI();
 }
 
 /**
@@ -625,7 +730,84 @@ function vecBridgeStop() {
   vecBridgeStatus("parado");
   vecBridgeLog("ponte parada");
 
-  if (vecBridge.ui && vecBridge.ui.toggle) vecBridge.ui.toggle.text = "Iniciar";
+  vecBridgeRefreshUI();
+}
+
+/**
+ * Relatório do estado real da ponte, escrito no log.
+ *
+ * ── Por que isto roda no clique e não numa tarefa ─────────────────────────────
+ * Todo o resto do diagnóstico depende de `scheduleTask`, e existe um caso em que
+ * `scheduleTask` é justamente o que não funciona: com um diálogo do After Effects na
+ * tela, a thread principal está bloqueada e nenhuma tarefa agendada roda. O painel
+ * continua dizendo "ouvindo" porque ninguém sobrou para corrigir o texto.
+ *
+ * Um clique de botão é evento de UI e roda de todo jeito. Então esta é a única leitura
+ * que funciona exatamente quando é mais necessária.
+ */
+function vecBridgeDiagnostico() {
+  var agora = new Date().getTime();
+
+  vecBridgeLog("── diagnóstico ──");
+  vecBridgeLog(
+    "ponte: " + (vecBridge.running ? "ligada" : "desligada") +
+      " · ciclos: " + vecBridge.cycles +
+      " · comandos: " + vecBridge.processed + " ok, " + vecBridge.errors + " com erro"
+  );
+  vecBridgeLog(
+    "painéis abertos: " + vecBridge.uis.length +
+      " · reanimações: " + vecBridge.revivals +
+      " · After Effects " + app.version
+  );
+
+  if (!vecBridge.running) {
+    vecBridgeLog("a ponte está desligada — clique em Iniciar.");
+    vecBridgeLog("── fim ──");
+    return;
+  }
+
+  // ── Por que `cycles` e não só `lastPoll` ────────────────────────────────────
+  // `vecBridgeStart` carimba `lastPoll` na largada, para o supervisor não confundir uma
+  // ponte recém-ligada com uma morta. O efeito colateral é que, no instante seguinte ao
+  // clique em Iniciar, `lastPoll` está fresco e o polling parece saudável — mesmo que
+  // nenhum ciclo tenha rodado. E é justamente esse o momento em que a pessoa aperta o
+  // diagnóstico. Zero ciclo é a evidência que não mente.
+  var espera = vecBridge.POLL_MS * 6;
+  var desdeInicio = vecBridge.startedAt ? agora - vecBridge.startedAt : 0;
+
+  if (vecBridge.cycles === 0) {
+    if (desdeInicio < espera) {
+      vecBridgeLog(
+        "liguei há " + (desdeInicio / 1000).toFixed(1) + "s e o primeiro ciclo ainda não " +
+          "rodou. Espere um segundo e clique aqui de novo."
+      );
+      vecBridgeLog("── fim ──");
+      return;
+    }
+    vecBridgeLog(
+      "ATENÇÃO: a ponte está ligada há " + (desdeInicio / 1000).toFixed(1) +
+        "s e o polling nunca rodou nenhum ciclo."
+    );
+  } else {
+    var idade = agora - vecBridge.lastPoll;
+
+    if (idade <= espera) {
+      vecBridgeLog("polling normal: último ciclo há " + (idade / 1000).toFixed(1) + "s.");
+      vecBridgeLog("── fim ──");
+      return;
+    }
+
+    vecBridgeLog("ATENÇÃO: último ciclo há " + (idade / 1000).toFixed(1) + "s — o polling parou.");
+  }
+
+  // Chegou aqui: ligada e sem rodar. Só há uma causa comum, e ela não se resolve no
+  // painel — então vale dizer o que fazer em vez de deixar o usuário adivinhar.
+  vecBridgeLog(
+    "Causa mais comum: um diálogo do After Effects aberto — inclusive atrás da janela " +
+      "principal. Enquanto ele estiver na tela, nenhuma tarefa agendada roda, e nem " +
+      "Parar → Iniciar resolve. Feche todo diálogo primeiro, depois clique aqui de novo."
+  );
+  vecBridgeLog("── fim ──");
 }
 
 // ---------------------------------------------------------------- interface
@@ -657,20 +839,50 @@ function vecBridgeStop() {
 
     var rodape = win.add("group");
     rodape.alignment = ["fill", "bottom"];
-    var abrirPasta = rodape.add("button", undefined, "Abrir pasta da ponte");
+    var diagnostico = rodape.add("button", undefined, "Diagnóstico");
+    diagnostico.alignment = ["fill", "bottom"];
+    var abrirPasta = rodape.add("button", undefined, "Abrir pasta");
     abrirPasta.alignment = ["fill", "bottom"];
 
-    vecBridge.ui = { win: win, status: status, toggle: toggle, logBox: logBox };
+    var minhaUI = { win: win, status: status, toggle: toggle, logBox: logBox };
+    vecBridge.uis.push(minhaUI);
 
     toggle.onClick = function () {
+      // ── O clique se anuncia no log ───────────────────────────────────────────
+      // "Cliquei e não mudou nada" é ambíguo entre duas coisas muito diferentes: o
+      // handler não rodou, ou rodou e falhou. Uma linha no log separa as duas de graça,
+      // e sem ela a pergunta só se responde com outra rodada de teste.
+      vecBridgeLog(vecBridge.running ? "clique: Parar" : "clique: Iniciar");
+
       // Um clique é decisão explícita e vence o auto-início pendente — inclusive um
       // "Parar" durante a espera, que antes seria desfeito pelo agendamento.
       vecBridge.autoStart = false;
 
-      if (vecBridge.running) {
-        vecBridgeStop();
-      } else {
-        vecBridgeStart();
+      // ScriptUI engole exceção de handler sem deixar rastro: o botão simplesmente
+      // não reage. Melhor capturar e contar.
+      try {
+        if (vecBridge.running) {
+          vecBridgeStop();
+        } else {
+          vecBridgeStart();
+        }
+      } catch (e) {
+        try {
+          vecBridgeLog("o clique falhou: " + vecBridgeMotivo(e));
+        } catch (e2) {}
+      }
+
+      // Mesmo que algo acima tenha falhado, o rótulo passa a refletir a verdade.
+      vecBridgeRefreshUI();
+    };
+
+    diagnostico.onClick = function () {
+      try {
+        vecBridgeDiagnostico();
+      } catch (e) {
+        try {
+          vecBridgeLog("o diagnóstico falhou: " + vecBridgeMotivo(e));
+        } catch (e2) {}
       }
     };
 
@@ -686,10 +898,21 @@ function vecBridgeStop() {
       this.layout.resize();
     };
 
-    // Fechar o painel sem parar o polling deixa uma tarefa órfã rodando na engine
-    // até o After Effects fechar.
     win.onClose = function () {
-      vecBridgeStop();
+      // Sai do registro primeiro, senão as escritas seguintes vão para uma widget
+      // destruída.
+      var restantes = [];
+      for (var i = 0; i < vecBridge.uis.length; i++) {
+        if (vecBridge.uis[i] !== minhaUI) restantes.push(vecBridge.uis[i]);
+      }
+      vecBridge.uis = restantes;
+
+      // Fechar o painel sem parar o polling deixaria uma tarefa órfã rodando na engine
+      // até o After Effects fechar. Mas só para se este era o último painel: com outro
+      // aberto, fechar uma aba duplicada desligava a ponte que o outro painel ainda
+      // mostrava como "ouvindo".
+      if (vecBridge.uis.length === 0) vecBridgeStop();
+
       return true;
     };
 
@@ -718,6 +941,14 @@ function vecBridgeStop() {
   // thread principal, quando ela estiver livre. Se o AE ainda estiver ocupado
   // subindo, ou com um diálogo na frente, ele simplesmente atrasa — que é exatamente
   // o comportamento desejado.
-  vecBridgeStatus("aguardando o After Effects terminar de subir…");
-  app.scheduleTask("vecBridgeAutoStart()", 4000, false);
+  vecBridgeRefreshUI();
+
+  // Se a ponte já está de pé — carga nova de painel numa engine que já estava
+  // escutando — não há o que aguardar nem o que reiniciar.
+  if (vecBridge.running) {
+    vecBridgeStatus("ouvindo");
+  } else {
+    vecBridgeStatus("aguardando o After Effects terminar de subir…");
+    $.global.vecBridgeAutoStartId = app.scheduleTask("vecBridgeAutoStart()", 4000, false);
+  }
 })(this);

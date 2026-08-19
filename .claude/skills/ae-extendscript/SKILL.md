@@ -322,6 +322,68 @@ o projeto e há um script fazendo polling desde a subida, isole antes de acusar:
 painel da pasta ScriptUI Panels, reinicie o AE e abra o mesmo projeto. Se o erro
 permanecer, ele é do projeto ou de outro plugin — não do painel.
 
+## Painel de ScriptUI: o arquivo pode carregar duas vezes
+
+Painel encaixado mais um flutuante do Run Script File, ou fechar e reabrir a aba: o mesmo
+arquivo roda de novo na mesma engine. Duas consequências, as duas já custaram tempo aqui.
+
+**`var meuEstado = {...}` no topo é refeito.** As contas voltam a zero e `running` volta a
+false com a tarefa agendada ainda de pé. Guarde o estado em `$.global`, com um número de
+versão para o caso de uma versão nova do arquivo achar um estado antigo na engine:
+
+```javascript
+var SCHEMA = 2;
+if (!$.global.meuEstado || $.global.meuEstado.schema !== SCHEMA) {
+  $.global.meuEstado = { schema: SCHEMA, /* ... */ uis: [] };
+}
+var estado = $.global.meuEstado;
+```
+
+**Guardar `estado.ui` num slot só é pior.** O último painel carregado toma o slot, e daí em
+diante todo status e todo texto de botão vão para *aquele* painel — não para o painel em
+que a pessoa clicou. O sintoma é o pior possível para depurar: clicar em Iniciar, nada
+mudar, e nenhum erro em lugar nenhum. Mantenha uma **lista** de painéis e escreva em todos,
+podando quem lança (painel fechado tem widget destruída, e escrever nela lança).
+
+Vale também fazer o clique se anunciar no log. "Cliquei e não mudou nada" é ambíguo entre o
+handler não ter rodado e ter rodado e falhado, e ScriptUI engole exceção de handler sem
+deixar rastro.
+
+## Um relator de erro não pode lançar
+
+```javascript
+// Errado: o argumento é avaliado antes da chamada. Se describeError lançar, a exceção
+// escapa do catch que devia relatá-la.
+catch (e) { log("falhou: " + vec.describeError(e)); }
+```
+
+Com camadas de captura aninhadas isso é pior do que parece: a exceção sobe, lança de novo
+na camada de cima pelo mesmo motivo, e termina num `catch (e2) {}` que engole. A falha
+original desaparece sem uma linha de log. Embrulhe o relator:
+
+```javascript
+function motivo(e) {
+  try { return vec.describeError(e); } catch (a) {}
+  try { return String(e); } catch (b) {}
+  return "erro que não consegui descrever";
+}
+```
+
+## Dá para testar painel fora do After Effects
+
+Quase nada do que um painel de ponte faz precisa do AE: ele mexe em estado, em widget e em
+arquivo. Um host falso em Node cobre os três, e cobre justamente onde os defeitos estavam.
+
+Ver `packages/jsx/test/bridge-panel.test.js`. Três decisões que fizeram diferença:
+
+- **`scheduleTask` do host falso não dispara sozinho** — quem dispara é o teste. É a única
+  forma de expressar o cenário do diálogo modal, em que a tarefa existe e não roda.
+- **O bundle é montado a partir das fontes**, não lido de `dist/`. Um teste que aprova um
+  bundle velho é pior que nenhum teste.
+- **O global do sandbox só inventa stub para nome que começa em maiúscula** (a forma dos
+  enums do AE). Nome minúsculo tem que devolver `undefined`, senão o idioma
+  `var vec = vec || {}` captura o stub e `vec.quote` passa a ser um número.
+
 ## `timeSpanStart` da fila de render é em tempo de exibição
 
 `comp.displayStartTime` não é zero quando a comp veio de uma sequência maior. A fila de
