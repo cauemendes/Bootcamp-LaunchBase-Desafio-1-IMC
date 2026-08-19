@@ -19,3 +19,15 @@ Thumbs.db
 # por `npm run bundle`.
 dist/*
 !dist/bridge-panel.jsx
+
+# Marcas de cliente guardadas dentro do repositório.
+#
+# O padrão é fora daqui, em Application Support. Mas uma equipe pode preferir uma pasta
+# só, dentro do projeto, para apontar o Claude num lugar e pronto — é uma escolha
+# legítima e este ignore existe para ela não custar caro.
+#
+# Paleta e logo de cliente costumam vir marcados como confidenciais. Um `git add .`
+# distraído os manda para o servidor, e o que foi para o histórico do git não sai de lá
+# só apagando o arquivo depois.
+marcas/
+brands/
