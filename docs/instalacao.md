@@ -31,9 +31,12 @@ npm install
 bash scripts/install-bridge.sh
 ```
 
-Não pede senha. O painel vai para a sua pasta de usuário, que é o lugar certo por três
-motivos: não mexe em pasta de sistema, sobrevive a uma atualização do After Effects, e
-é igual para todo mundo da equipe.
+Vai pedir sua senha de administrador: o painel é copiado para dentro do pacote do
+After Effects, em `Scripts/ScriptUI Panels`, que é a pasta que popula o menu Window com
+painel encaixável.
+
+Isso não se perde quando o After Effects atualiza — ao instalar uma versão nova, ele
+pergunta se você quer migrar as configurações da anterior, e os scripts vêm junto.
 
 No fim ele imprime **onde instalou e qual build**. Guarde esse número — é com ele que
 você confere, daqui a pouco, que o After Effects está rodando o código certo.

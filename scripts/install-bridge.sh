@@ -7,19 +7,24 @@
 #
 #   /Applications/Adobe After Effects <ano>/Scripts/ScriptUI Panels/
 #
-# Ela pede senha de administrador e é apagada quando o After Effects se atualiza. As
-# duas coisas são chatas, e mesmo assim é o padrão — porque é a única que comprovadamente
-# funciona.
+# `ScriptUI Panels` é o que popula o menu Window com painel encaixável. Um .jsx solto em
+# `Scripts/` também é carregado, mas aparece em File → Scripts e roda uma vez — não é o
+# que a ponte precisa.
+#
+# O único incômodo real desta pasta é pedir senha de administrador. A atualização do
+# After Effects não é problema: ao instalar uma versão nova, ele pergunta se você quer
+# migrar as configurações da anterior, e os scripts vêm junto.
 #
 # Houve uma tentativa de usar a pasta por usuário
-# (~/Library/Application Support/Adobe/<AE>/Scripts/ScriptUI Panels), que resolveria as
-# duas chatices de uma vez. O painel foi instalado lá e **sumiu do menu Window**: esta
-# versão do After Effects não varre aquela pasta, ou não com esse nome. A troca foi feita
-# com base no que a documentação sugere, sem verificação numa instalação real, e o
-# resultado foi um usuário sem painel nenhum.
+# (~/Library/Application Support/Adobe/<AE>/Scripts/ScriptUI Panels), para evitar a senha.
+# O painel foi instalado lá e **sumiu do menu Window**. Duas coisas mudaram juntas naquela
+# troca — a pasta e a permissão do arquivo, que passou a nascer 600 por causa do mktemp —
+# então não dá para afirmar qual das duas causou o sumiço.
 #
-# `--user` continua disponível para quem quiser testar de novo, e está marcado como não
-# verificado. Se funcionar na sua instalação, avise — o padrão volta a mudar, aí com prova.
+# O que dá para afirmar: a troca foi feita a partir do que a documentação sugere, sem
+# verificação numa instalação real, e o custo foi um usuário sem painel nenhum no meio do
+# trabalho. `--user` continua disponível e marcado como não verificado. Não o promova a
+# padrão sem alguém confirmar numa máquina de verdade.
 #
 # Ter cópia nas duas pastas é a pior situação possível: o aplicativo carrega uma, você
 # confere o build na outra, e todo defeito já corrigido reaparece sem que nada aponte

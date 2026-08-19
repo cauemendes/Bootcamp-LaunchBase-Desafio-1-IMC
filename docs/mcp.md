@@ -46,15 +46,21 @@ nada que possa falhar em silêncio.
 bash scripts/install-bridge.sh
 ```
 
-Instala na pasta de painéis **do usuário**, não dentro do pacote do aplicativo. A
-diferença importa por três motivos: não pede senha de administrador, sobrevive a uma
-atualização do After Effects — a pasta do aplicativo é apagada junto —, e é o mesmo
-caminho para qualquer pessoa da equipe.
+Instala em `Scripts/ScriptUI Panels` dentro do pacote do aplicativo — a pasta que
+popula o menu Window com painel encaixável. Pede senha de administrador, e é o único
+incômodo real: a atualização do After Effects não perde nada, porque ele pergunta se
+quer migrar as configurações da versão anterior e os scripts vêm junto.
 
-O After Effects carrega painéis das duas pastas, e ter cópia nas duas é a pior situação
-possível: o aplicativo carrega uma, você confere o build na outra, e todo defeito já
-corrigido reaparece sem que nada aponte para a causa. O script instala numa só e remove
-a concorrente.
+Um `.jsx` solto em `Scripts/` também é carregado, mas aparece em File → Scripts e roda
+uma vez. Não serve para a ponte, que precisa ficar aberta.
+
+Houve uma tentativa de instalar na pasta por usuário para evitar a senha, e o painel
+sumiu do menu Window. `--user` continua disponível, marcado como não verificado — não
+vale promover a padrão sem alguém confirmar numa máquina de verdade.
+
+Ter cópia em duas pastas é a pior situação possível: o aplicativo carrega uma, você
+confere o build na outra, e todo defeito já corrigido reaparece sem que nada aponte para
+a causa. O script instala numa só e remove a concorrente.
 
 ```bash
 bash scripts/install-bridge.sh --doctor   # lista as cópias e os builds, sem instalar
