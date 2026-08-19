@@ -26,8 +26,14 @@ dist/*
 # só, dentro do projeto, para apontar o Claude num lugar e pronto — é uma escolha
 # legítima e este ignore existe para ela não custar caro.
 #
+# Para isso, VECTORIZE_AE_BRAND_DIR aponta para a RAIZ do projeto, não para `brands/`:
+# o BrandStore acrescenta `brands/` sozinho, e apontar direto para lá criaria
+# `brands/brands/`.
+#
 # Paleta e logo de cliente costumam vir marcados como confidenciais. Um `git add .`
 # distraído os manda para o servidor, e o que foi para o histórico do git não sai de lá
 # só apagando o arquivo depois.
-marcas/
 brands/
+
+# `marcas/` esteve numa instrução anterior. Fica ignorado para quem chegou a criá-la.
+marcas/
