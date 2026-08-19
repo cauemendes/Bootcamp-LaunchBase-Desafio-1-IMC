@@ -94,7 +94,7 @@ test("clear volta ao comportamento sem marca sem apagar os perfis", () => {
 test("arquivo de perfil corrompido não derruba a leitura", () => {
   const store = tempStore();
   store.save(MARCA);
-  fs.writeFileSync(path.join(store.brandsDir, "cliente-x.json"), "{ isto não é json", "utf8");
+  fs.writeFileSync(path.join(store.folderFor("cliente-x"), "brand.json"), "{ isto não é json", "utf8");
 
   // Melhor cair para "sem marca" e perguntar do que estourar no meio de uma
   // reconstrução que o usuário já pediu.
@@ -135,4 +135,80 @@ test("sem redirecionamento, catálogo e ponteiro moram juntos", () => {
 
   assert.equal(store.active().slug, "cliente-x");
   assert.ok(fs.existsSync(path.join(dir, "brand-active.json")));
+});
+
+test("os logos entram na pasta do cliente, com caminho relativo", () => {
+  // ── Por que isto importa ao compartilhar ─────────────────────────────────────
+  // Guardar o caminho absoluto de onde o logo estava — Dropbox, Desktop, pasta do
+  // projeto — funciona numa máquina só e não sobrevive a ser mandado para alguém. O
+  // colega recebe o perfil, os caminhos não existem na máquina dele, e o erro aparece
+  // na hora de construir uma cena, longe de onde a causa está.
+  const store = tempStore();
+
+  const origem = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vec-logo-")), "qualquer.png");
+  fs.writeFileSync(origem, "png falso");
+
+  store.save({ ...MARCA, assets: { "logo-principal": origem } });
+
+  // No disco fica relativo: é isso que faz a pasta funcionar em qualquer máquina.
+  const guardado = JSON.parse(
+    fs.readFileSync(path.join(store.folderFor("cliente-x"), "brand.json"), "utf8")
+  );
+  assert.equal(guardado.assets["logo-principal"], path.join("assets", "logo-principal.png"));
+
+  // E o arquivo veio junto — a pasta é autocontida, dá para zipar e mandar.
+  const copia = path.join(store.folderFor("cliente-x"), "assets", "logo-principal.png");
+  assert.equal(fs.readFileSync(copia, "utf8"), "png falso");
+
+  // Quem lê recebe absoluto, porque é o que o resto do sistema precisa.
+  assert.equal(store.active().brand.assets["logo-principal"], copia);
+});
+
+test("o nome do arquivo vem do token, não da origem", () => {
+  // Dois clientes com "logo.png", ou dois assets do mesmo cliente com o mesmo nome de
+  // arquivo, se atropelariam.
+  const store = tempStore();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "vec-logo-"));
+
+  const a = path.join(base, "logo.png");
+  const b = path.join(base, "outra", "logo.png");
+  fs.mkdirSync(path.dirname(b), { recursive: true });
+  fs.writeFileSync(a, "primeiro");
+  fs.writeFileSync(b, "segundo");
+
+  store.save({ ...MARCA, assets: { principal: a, secundario: b } });
+
+  const pasta = path.join(store.folderFor("cliente-x"), "assets");
+  assert.equal(fs.readFileSync(path.join(pasta, "principal.png"), "utf8"), "primeiro");
+  assert.equal(fs.readFileSync(path.join(pasta, "secundario.png"), "utf8"), "segundo");
+});
+
+test("caminho que não existe é preservado, não engolido", () => {
+  // A validação já reclama de arquivo faltando. Sumir com o caminho aqui esconderia o
+  // que a pessoa digitou errado, e ela não teria como corrigir.
+  const store = tempStore();
+  store.save({ ...MARCA, assets: { logo: "/nao/existe/logo.png" } });
+
+  assert.equal(store.active().brand.assets.logo, "/nao/existe/logo.png");
+});
+
+test("perfil no formato antigo continua sendo lido, e a gravação migra", () => {
+  const store = tempStore();
+  fs.mkdirSync(store.brandsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(store.brandsDir, "antigo.json"),
+    JSON.stringify({ name: "Antigo", colors: { primary: "#111111" } }),
+    "utf8"
+  );
+
+  assert.ok(store.list().some((m) => m.slug === "antigo"));
+  assert.equal(store.activate("antigo").brand.name, "Antigo");
+
+  // Gravar move para a pasta e não deixa o arquivo solto para trás — dois lugares com o
+  // mesmo perfil é a confusão que este projeto já pagou caro para aprender.
+  store.save({ name: "Antigo", colors: { primary: "#222222" } });
+
+  assert.ok(fs.existsSync(path.join(store.folderFor("antigo"), "brand.json")));
+  assert.ok(!fs.existsSync(path.join(store.brandsDir, "antigo.json")));
+  assert.equal(store.list().filter((m) => m.slug === "antigo").length, 1);
 });

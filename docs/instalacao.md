@@ -84,19 +84,32 @@ Os perfis ficam **fora do repositório**, em
 trabalho, não código, e paleta de cliente costuma vir marcada como confidencial — não
 pode acabar num commit por acidente.
 
-Para a equipe compartilhar o catálogo, aponte a pasta para um lugar sincronizado:
+Cada cliente tem uma pasta própria, e os logos ficam dentro dela:
+
+```
+brands/amazon-ads/brand.json
+brands/amazon-ads/assets/logo-principal.png
+```
+
+Você aponta o logo de onde ele estiver — Dropbox, Desktop, a pasta do projeto — e o
+`set_brand` traz uma cópia para dentro. Isso é o que torna a pasta autocontida.
+
+**Para mandar uma marca a alguém: zipe a pasta do cliente e mande.** Quem recebe
+descompacta dentro de `brands/` e roda `set_brand` com `activateSlug`. Nada de caminho
+quebrado, porque nenhum caminho aponta para fora.
+
+Se preferir um catálogo compartilhado em vez de mandar arquivo, aponte a pasta inteira
+para um lugar sincronizado:
 
 ```bash
 export VECTORIZE_AE_BRAND_DIR="/Users/voce/Dropbox/.../vectorize-ae-marcas"
 ```
 
-Quem configurar a marca de um cliente configura para todo mundo. Quem entrar num projeto
-novo já encontra a paleta certa.
-
-O perfil **ativo** não é compartilhado, de propósito: ele fica sempre nesta máquina. Ele
-responde "em qual cliente eu estou trabalhando agora", e compartilhado viraria a pior
-classe de erro possível — um colega troca de cliente do outro lado da cidade e a sua
-próxima cena sai com a paleta errada, sem nada na tela sugerindo o motivo.
+O perfil **ativo** não é compartilhado em nenhum dos dois casos, de propósito: ele fica
+sempre nesta máquina. Ele responde "em qual cliente eu estou trabalhando agora", e
+compartilhado viraria a pior classe de erro possível — um colega troca de cliente do
+outro lado da cidade e a sua próxima cena sai com a paleta errada, sem nada na tela
+sugerindo o motivo.
 
 ## Atualizar para uma versão nova
 
