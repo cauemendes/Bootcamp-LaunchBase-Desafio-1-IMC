@@ -153,6 +153,28 @@ A posição é a baseline da **primeira** linha. \`lineHeight\` é de baseline a
 pixels — meça as duas baselines no frame e subtraia. Sem ele o After Effects usa 1,2 × o
 corpo, que é mais solto que a maioria dos designs.
 
+**Decida por elemento: vetor ou pixel.** Reconstruir com formas é o que dá editabilidade,
+e é para isso que esta ferramenta existe. Mas há coisa que não se reconstrói, e insistir
+produz um resultado pior que honesto — parece tentativa.
+
+| Reconstrua com formas | Recorte com \`crop_image\` |
+|---|---|
+| cartão, barra, botão, pílula, moldura | ilustração desenhada à mão |
+| ícone de linha, seta, marca de check | personagem, produto renderizado |
+| texto, fundo chapado, divisória | qualquer coisa com sombreado ou dezenas de curvas |
+
+O teste é simples: **se você conseguiria descrever a forma em uma frase, é vetor.** "Um
+retângulo arredondado laranja com stroke escuro" é uma frase. Um tênis com solado
+ondulado, cabedal em três tons e sombra no chão não é — e medir primitivas nele devolve um
+borrão de formas coloridas.
+
+\`crop_image\` recorta a região do frame de referência e grava um PNG. O caminho vai direto
+em \`source\` de uma forma \`image\`. A ilustração fica com os pixels originais, o resto da
+cena continua vetor, e é o resto que se anima — cartão que entra, barra que cresce, botão
+que pulsa. A ilustração normalmente só precisa de posição e escala.
+
+Um quadro com uma ilustração no meio de interface é o caso mais comum, não a exceção.
+
 **Seta é um tipo próprio — não desenhe traço e triângulo separados.**
 
 \`\`\`json
@@ -163,7 +185,12 @@ corpo, que é mais solto que a maioria dos designs.
 
 A ponta encosta em \`x2, y2\` e é girada para a direção em que o traço **chega** ali — num
 traço curvo isso não é a direção de início para fim, e é exatamente aí que uma seta
-montada à mão sai torta. O traço para na base da ponta, senão o stroke aparece por dentro
+montada à mão sai torta.
+
+Seta grossa e cheia — daquelas em que o corpo é um bloco, não um traço — não é este tipo:
+é uma forma fechada. Faça como \`polygon\` com os vértices do contorno, ou recorte se ela
+tiver afilamento e canto arredondado. \`arrow\` é para seta de traço, incluindo a fina e
+curva que liga dois elementos. O traço para na base da ponta, senão o stroke aparece por dentro
 do bico e engrossa ele.
 
 \`bend\` é o quanto o meio do traço se afasta de uma reta imaginária entre as duas pontas,

@@ -28,6 +28,8 @@ import {
   decodePng,
   measureRegion,
   SequenceError,
+  cropImage,
+  encodePng,
   normalizeScene,
   planSequence,
   resolveAnimation,
@@ -354,6 +356,84 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
     const bytes = fs.readFileSync(caminho);
     return decodePng(new Uint8Array(bytes), (b) => new Uint8Array(zlib.inflateSync(Buffer.from(b))));
   };
+
+  server.registerTool(
+    "crop_image",
+    {
+      title: "Recortar uma parte da imagem",
+      description:
+        "Recorta uma região do frame de referência e grava um PNG. Use para o que NÃO se " +
+        "reconstrói com formas.\n\n" +
+        "Reconstruir com formas é o que dá editabilidade, e vale para cartão, barra, botão, " +
+        "pílula, ícone de linha, texto — geometria. Não vale para ilustração orgânica: um " +
+        "tênis desenhado à mão, um personagem, um braço robótico com garra, qualquer coisa " +
+        "com dezenas de curvas e sombreados sobrepostos. Medir primitivas numa dessas " +
+        "produz um borrão de formas coloridas, e o resultado é pior do que honesto — " +
+        "parece tentativa.\n\n" +
+        "O caminho devolvido vai direto em `source` de uma forma `image`. Assim a " +
+        "ilustração fica com os pixels originais e o resto da cena continua vetor " +
+        "editável, que é o que se anima.",
+      inputSchema: {
+        path: z.string().describe("PNG de origem — o frame de referência."),
+        x: z.number().describe("Canto superior esquerdo da região, em pixels da imagem."),
+        y: z.number(),
+        width: z.number(),
+        height: z.number(),
+        out: z
+          .string()
+          .optional()
+          .describe(
+            "Caminho do PNG a gravar. Omitido = ao lado da origem, com sufixo da região."
+          ),
+      },
+    },
+    async ({ path: origem, x, y, width, height, out }) => {
+      let img;
+      try {
+        img = carregarPng(origem);
+      } catch (err) {
+        return asError(`Não consegui ler ${origem}: ${err.message}`);
+      }
+
+      let recorte;
+      try {
+        recorte = cropImage(img, { x, y, width, height });
+      } catch (err) {
+        return asError(err.message);
+      }
+
+      const destino =
+        out ??
+        origem.replace(
+          /\.png$/i,
+          `-crop-${recorte.x}-${recorte.y}-${recorte.width}x${recorte.height}.png`
+        );
+
+      try {
+        const bytes = encodePng(recorte, (b) => new Uint8Array(zlib.deflateSync(Buffer.from(b))));
+        fs.writeFileSync(destino, bytes);
+      } catch (err) {
+        return asError(`Recortei mas não consegui gravar em ${destino}: ${err.message}`);
+      }
+
+      // Avisar quando o pedido foi aparado importa: as coordenadas do recorte são as que
+      // vão para a forma `image`, e usar as pedidas deixaria a ilustração deslocada.
+      const aparado =
+        recorte.width !== Math.round(width) || recorte.height !== Math.round(height);
+
+      return asText(
+        `Gravei ${destino} — ${recorte.width}×${recorte.height} em ${recorte.x},${recorte.y}.` +
+          (aparado
+            ? `\n\nATENÇÃO: o recorte foi aparado na borda da imagem (você pediu ` +
+              `${Math.round(width)}×${Math.round(height)}). Use as coordenadas e o tamanho ` +
+              "ACIMA na forma `image`, não os que você pediu, senão a ilustração fica " +
+              "deslocada."
+            : "") +
+          `\n\nUse em: { "shape": { "type": "image", "x": ${recorte.x}, "y": ${recorte.y}, ` +
+          `"w": ${recorte.width}, "h": ${recorte.height}, "source": "${destino}" } }`
+      );
+    }
+  );
 
   server.registerTool(
     "measure_image",

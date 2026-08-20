@@ -28,6 +28,7 @@ export {
 export { readImageInfo, toBase64, SUPPORTED_MEDIA_TYPES } from "./image-info.js";
 
 export { PngError, decodePng } from "./png.js";
+export { PngEncodeError, cropImage, encodePng } from "./png-encode.js";
 export { DEFAULT_TOLERANCE, measureRegion, sampleColor, scanLine } from "./measure.js";
 
 export {
