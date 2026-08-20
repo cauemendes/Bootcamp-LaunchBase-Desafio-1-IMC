@@ -30,9 +30,11 @@ export { readImageInfo, toBase64, SUPPORTED_MEDIA_TYPES } from "./image-info.js"
 export { PngError, decodePng } from "./png.js";
 export { PngEncodeError, cropImage, encodePng } from "./png-encode.js";
 export {
+  CutoutError,
   DEFAULT_CUTOUT_TOLERANCE,
   contentBounds,
   edgeColor,
+  isolateComponent,
   removeFlatBackground,
   trimTo,
 } from "./cutout.js";

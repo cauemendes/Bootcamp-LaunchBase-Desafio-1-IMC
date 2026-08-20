@@ -153,6 +153,11 @@ A posição é a baseline da **primeira** linha. \`lineHeight\` é de baseline a
 pixels — meça as duas baselines no frame e subtraia. Sem ele o After Effects usa 1,2 × o
 corpo, que é mais solto que a maioria dos designs.
 
+**Faltou algo nas ferramentas? Relate, não implemente.** Você está usando o Vectorize AE,
+não desenvolvendo. Editar o código dele daqui chega sem teste, trava a próxima atualização
+na máquina de quem usa, e a mudança se perde. Descreva o caso que não deu — é assim que a
+maioria das melhorias apareceu.
+
 **De onde vem a referência.** Se a pessoa pediu para redesenhar algo que está no After
 Effects — a comp aberta, o que está na tela agora, uma comp que já existe no projeto —,
 **você mesmo captura**: \`save_frame\` renderiza o frame e devolve o caminho do arquivo, que

@@ -28,9 +28,11 @@ import {
   decodePng,
   measureRegion,
   SequenceError,
+  CutoutError,
   contentBounds,
   cropImage,
   encodePng,
+  isolateComponent,
   removeFlatBackground,
   trimTo,
   normalizeScene,
@@ -429,6 +431,23 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .number()
           .optional()
           .describe("Quanto a cor pode variar e ainda contar como fundo. Padrão 10."),
+        isolate: z
+          .object({ x: z.number(), y: z.number() })
+          .optional()
+          .describe(
+            "Um ponto DENTRO da ilustração. Mantém só o desenho ligado a ele e apaga " +
+              "qualquer outra coisa que caiu no recorte.\n\n" +
+              "USE quando a ilustração encosta em outro elemento do design — um ícone ao " +
+              "lado, a borda de um cartão — e nenhum retângulo separa os dois: com folga " +
+              "para não cortar a ilustração ele leva um pedaço do vizinho, apertado para " +
+              "excluir o vizinho ele corta a ilustração.\n\n" +
+              "Separa por conectividade, não por cor, então funciona mesmo quando o " +
+              "vizinho tem exatamente a mesma tinta — o caso comum numa arte de paleta " +
+              "fechada. Só faz efeito com removeBackground: true, porque opera sobre o " +
+              "alfa que sobra depois do fundo sair.\n\n" +
+              "As coordenadas são as da imagem de ORIGEM, o mesmo espaço de x/y/width/" +
+              "height acima — não do recorte já cortado."
+          ),
         trim: z
           .boolean()
           .optional()
@@ -449,6 +468,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       out,
       removeBackground,
       backgroundTolerance,
+      isolate,
       trim,
     }) => {
       let img;
@@ -468,12 +488,37 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       let recorteFinal = recorte;
       let fundo = null;
       let caixa = null;
+      let isolamento = null;
       let posX = recorte.x;
       let posY = recorte.y;
 
       if (removeBackground) {
         fundo = removeFlatBackground(recorte, { tolerance: backgroundTolerance });
         recorteFinal = { width: fundo.width, height: fundo.height, data: fundo.data };
+
+        if (isolate) {
+          // A semente chega em coordenada da imagem de origem — o mesmo espaço de x/y —
+          // e `isolateComponent` a quer em coordenada local do recorte. Converter aqui
+          // evita que quem chama tenha de fazer essa subtração, que é onde ela erraria.
+          try {
+            const isolado = isolateComponent(recorteFinal, {
+              x: Math.round(isolate.x) - recorte.x,
+              y: Math.round(isolate.y) - recorte.y,
+            });
+            recorteFinal = { width: isolado.width, height: isolado.height, data: isolado.data };
+            isolamento = isolado;
+          } catch (err) {
+            if (err instanceof CutoutError) {
+              return asError(
+                `isolate não deu: ${err.message}\n\n` +
+                  "A semente é em coordenada da IMAGEM DE ORIGEM, a mesma de x/y. " +
+                  `Este recorte cobre ${recorte.x},${recorte.y} até ` +
+                  `${recorte.x + recorte.width},${recorte.y + recorte.height}.`
+              );
+            }
+            throw err;
+          }
+        }
 
         caixa = contentBounds(recorteFinal);
 
@@ -521,6 +566,17 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
             "folga se tira depois com `trim`, corte não se recupera."
           : "";
 
+      // Quanto o isolamento descartou é o que revela semente no lugar errado: apagar
+      // quase tudo significa que ela caiu num detalhe solto em vez de na ilustração.
+      const notaIsolar = !isolamento
+        ? ""
+        : `\n\nIsolamento: ${isolamento.kept} pixels mantidos, ${isolamento.removed} ` +
+          "descartados por não estarem ligados à semente." +
+          (isolamento.kept < isolamento.removed / 4
+            ? " ISSO É POUCO MANTIDO — a semente provavelmente caiu num detalhe solto e " +
+              "não no corpo da ilustração. Aponte um ponto no meio da maior área dela."
+            : "");
+
       const notaFundo = !fundo
         ? ""
         : `\n\nFundo ${fundo.color} removido: ${Math.round(proporcao * 100)}% do recorte ` +
@@ -537,6 +593,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         `Gravei ${destino} — ${recorte.width}×${recorte.height} em ${recorte.x},${recorte.y}.` +
           notaCorte +
           notaFundo +
+          notaIsolar +
           (aparado
             ? `\n\nATENÇÃO: o recorte foi aparado na borda da imagem (você pediu ` +
               `${Math.round(width)}×${Math.round(height)}). Use as coordenadas e o tamanho ` +

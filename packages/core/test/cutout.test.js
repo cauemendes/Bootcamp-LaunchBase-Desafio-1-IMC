@@ -10,9 +10,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  CutoutError,
   DEFAULT_CUTOUT_TOLERANCE,
   contentBounds,
   edgeColor,
+  isolateComponent,
   removeFlatBackground,
   trimTo,
 } from "../src/cutout.js";
@@ -218,4 +220,91 @@ test("recorte sem nenhum desenho é reportado como vazio, não como corte", () =
 
   assert.equal(caixa.empty, true);
   assert.deepEqual(caixa.touches, []);
+});
+
+/** Ilustração e um vizinho da MESMA cor, separados por fundo. */
+function comVizinho() {
+  const width = 21;
+  const height = 11;
+  const data = new Uint8Array(width * height * 4);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const ilustracao = x >= 2 && x <= 7 && y >= 3 && y <= 7;
+      const vizinho = x >= 13 && x <= 18 && y >= 3 && y <= 7;
+      const cor = ilustracao || vizinho ? TINTA : FUNDO;
+
+      const i = (y * width + x) * 4;
+      data[i] = cor[0];
+      data[i + 1] = cor[1];
+      data[i + 2] = cor[2];
+      data[i + 3] = 255;
+    }
+  }
+
+  return { width, height, data };
+}
+
+test("isolar por conectividade descarta vizinho da mesma cor", () => {
+  // ── O caso que só isto resolve ───────────────────────────────────────────────
+  // Retângulo separa o que está separado. Quando a ilustração encosta em outro elemento,
+  // não existe retângulo certo: com folga leva o vizinho, apertado corta a ilustração.
+  // E remover por cor falha do jeito pior quando o vizinho tem a mesma tinta — o caso
+  // comum numa arte de paleta fechada. O que separa é estar ligado a um ponto de dentro.
+  const semFundo = removeFlatBackground(comVizinho(), { feather: false });
+  const iso = isolateComponent(semFundo, { x: 4, y: 5 });
+
+  const alfaEm = (x, y) => iso.data[(y * iso.width + x) * 4 + 3];
+
+  assert.equal(alfaEm(4, 5), 255, "a ilustração ficou");
+  assert.equal(alfaEm(15, 5), 0, "o vizinho da mesma cor saiu");
+  assert.equal(iso.kept, 30);
+  assert.equal(iso.removed, 30);
+});
+
+test("semente em pixel transparente é erro que diz o que fazer", () => {
+  // Errar a semente é o normal: ela é apontada olhando a imagem. O erro tem que dizer
+  // que caiu no fundo, senão parece defeito da ferramenta.
+  const semFundo = removeFlatBackground(comVizinho(), { feather: false });
+
+  assert.throws(
+    () => isolateComponent(semFundo, { x: 10, y: 5 }),
+    (e) => e instanceof CutoutError && /transparente/.test(e.message)
+  );
+});
+
+test("semente fora do recorte é erro com os dois tamanhos", () => {
+  const semFundo = removeFlatBackground(comVizinho(), { feather: false });
+
+  assert.throws(
+    () => isolateComponent(semFundo, { x: 500, y: 5 }),
+    (e) => e instanceof CutoutError && /21×11/.test(e.message)
+  );
+});
+
+test("isolar antes de tirar o fundo não separa nada", () => {
+  // Roda sobre o alfa. Antes do fundo sair, a imagem é um bloco opaco só e tudo está
+  // conectado a tudo — inclusive pelo fundo. Deixar isso implícito faria a ferramenta
+  // parecer quebrada quando a ordem fosse invertida.
+  const iso = isolateComponent(comVizinho(), { x: 4, y: 5 });
+
+  assert.equal(iso.removed, 0, "nada foi descartado: tudo estava conectado");
+  assert.equal(iso.kept, 21 * 11);
+});
+
+test("duas partes da mesma ilustração ligadas por um traço fino ficam juntas", () => {
+  // Conectividade é o critério, então um fio de um pixel basta para manter duas massas
+  // juntas — o que é o comportamento certo: numa ilustração, o que se toca é a mesma
+  // coisa.
+  const img = comVizinho();
+  for (let x = 8; x <= 12; x++) {
+    const i = (5 * img.width + x) * 4;
+    img.data[i] = TINTA[0];
+    img.data[i + 1] = TINTA[1];
+    img.data[i + 2] = TINTA[2];
+  }
+
+  const iso = isolateComponent(removeFlatBackground(img, { feather: false }), { x: 4, y: 5 });
+
+  assert.equal(iso.data[(5 * img.width + 15) * 4 + 3], 255, "o vizinho agora está ligado");
 });

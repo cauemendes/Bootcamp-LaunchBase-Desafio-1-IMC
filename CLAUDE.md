@@ -13,6 +13,24 @@ design 2D como shape layers editáveis.
 | `docs/` | Arquitetura, SceneSpec, roadmap | Ler antes de mexer no formato |
 | `.claude/skills/` | Conhecimento acumulado de AE | Registrar aqui o que for descoberto sobre a API |
 
+## Quem usa a ferramenta não mexe na ferramenta
+
+Há dois papéis, e misturá-los já custou tempo. Uma conversa **desenvolve** o Vectorize AE;
+outras **usam** o servidor MCP para trabalhar no After Effects.
+
+Se você está usando as ferramentas e faltou algo — uma opção, um caso não tratado, uma
+mensagem que não ajuda —, **relate em vez de implementar.** Não edite `packages/`,
+`scripts/` nem a documentação.
+
+Não é burocracia. Uma edição feita de fora chega sem teste, sem entrar no `dist/`
+versionado, e trava o `git pull` seguinte com "your local changes would be overwritten" —
+e aí o instalador roda na linha de baixo e reinstala a versão antiga com um "✓" no fim.
+Já aconteceu: o `save_frame` ficou dois dias parecendo defeituoso porque uma correção
+existia no repositório e não estava rodando.
+
+O que relatar vale ouro e não se perde: descreva o caso que não deu, o que você esperava e
+o que aconteceu. É assim que a maioria das melhorias deste projeto apareceu.
+
 ## Regras que valem sempre
 
 **Lógica nova vai no core, com teste.** Se algo pode ser calculado sem o After

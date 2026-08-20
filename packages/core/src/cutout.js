@@ -19,6 +19,13 @@ import { colorDistance, rgb255ToHex } from "./color.js";
 /** Tolerância que separa fundo de arte sem comer a borda suavizada do desenho. */
 export const DEFAULT_CUTOUT_TOLERANCE = 10;
 
+export class CutoutError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "CutoutError";
+  }
+}
+
 const idx = (img, x, y) => (y * img.width + x) * 4;
 
 /** Cor mais comum na borda. É ela que o preenchimento persegue. */
@@ -225,4 +232,94 @@ export function trimTo(img, box) {
   }
 
   return { width: box.width, height: box.height, data };
+}
+
+/**
+ * Mantém só o desenho ligado a um ponto, e apaga o resto do recorte.
+ *
+ * ── O problema que só isto resolve ────────────────────────────────────────────
+ * Retângulo separa o que está separado. Quando a ilustração encosta em outro elemento do
+ * design — um ícone ao lado, a borda de um cartão, um traço que passa por cima —, não
+ * existe retângulo certo: com folga para não cortar a ilustração, ele leva um pedaço do
+ * vizinho; apertado para excluir o vizinho, ele corta a ilustração.
+ *
+ * Remover por cor também não resolve, e falha do jeito pior: se o vizinho tiver a mesma
+ * tinta da ilustração — o mesmo azul-escuro de contorno, que é o caso comum numa arte de
+ * paleta fechada —, não há cor que separe os dois.
+ *
+ * O que separa é **conectividade**: a ilustração é o que está ligado a um ponto dentro
+ * dela. É o "clique dentro da forma" de uma varinha mágica, e é o único critério que
+ * funciona quando cor e retângulo falham juntos.
+ *
+ * Roda sobre o alfa, então precisa vir depois de `removeFlatBackground` — antes disso a
+ * imagem é um bloco opaco só, e tudo está conectado a tudo.
+ *
+ * @param {{width, height, data: Uint8Array}} img  RGBA já com o fundo transparente
+ * @param {{x: number, y: number}} semente  ponto dentro da ilustração, em coordenada
+ *   local do recorte
+ * @returns {{width, height, data: Uint8Array, kept: number, removed: number}}
+ */
+export function isolateComponent(img, semente) {
+  const { width, height } = img;
+  const sx = Math.round(semente?.x);
+  const sy = Math.round(semente?.y);
+
+  if (!Number.isFinite(sx) || !Number.isFinite(sy)) {
+    throw new CutoutError("isolateComponent precisa de uma semente com x e y numéricos.");
+  }
+
+  if (sx < 0 || sy < 0 || sx >= width || sy >= height) {
+    throw new CutoutError(
+      `a semente ${sx},${sy} está fora do recorte de ${width}×${height}.`
+    );
+  }
+
+  const data = new Uint8Array(img.data);
+  const inicioAlfa = data[(sy * width + sx) * 4 + 3];
+
+  if (inicioAlfa === 0) {
+    throw new CutoutError(
+      `a semente ${sx},${sy} caiu num pixel transparente — é fundo, não desenho. ` +
+        "Aponte um ponto claramente dentro da ilustração, longe da borda."
+    );
+  }
+
+  const total = width * height;
+  const manter = new Uint8Array(total);
+  const fila = new Int32Array(total);
+  let inicio = 0;
+  let fim = 0;
+
+  const empilhar = (p) => {
+    if (manter[p] || data[p * 4 + 3] === 0) return;
+    manter[p] = 1;
+    fila[fim++] = p;
+  };
+
+  empilhar(sy * width + sx);
+
+  while (inicio < fim) {
+    const p = fila[inicio++];
+    const x = p % width;
+    const y = (p - x) / width;
+
+    if (x > 0) empilhar(p - 1);
+    if (x < width - 1) empilhar(p + 1);
+    if (y > 0) empilhar(p - width);
+    if (y < height - 1) empilhar(p + width);
+  }
+
+  let kept = 0;
+  let removed = 0;
+
+  for (let p = 0; p < total; p++) {
+    if (manter[p]) {
+      kept++;
+      continue;
+    }
+    if (data[p * 4 + 3] !== 0) removed++;
+    data[p * 4 + 3] = 0;
+  }
+
+  return { width, height, data, kept, removed };
 }
