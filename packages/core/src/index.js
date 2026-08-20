@@ -28,6 +28,12 @@ export {
 export { readImageInfo, toBase64, SUPPORTED_MEDIA_TYPES } from "./image-info.js";
 
 export { PngError, decodePng } from "./png.js";
+export {
+  CompareError,
+  DEFAULT_COMPARE_TOLERANCE,
+  compareImages,
+  differenceImage,
+} from "./compare.js";
 export { PngEncodeError, cropImage, encodePng } from "./png-encode.js";
 export {
   CutoutError,

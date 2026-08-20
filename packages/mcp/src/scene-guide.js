@@ -153,6 +153,14 @@ A posição é a baseline da **primeira** linha. \`lineHeight\` é de baseline a
 pixels — meça as duas baselines no frame e subtraia. Sem ele o After Effects usa 1,2 × o
 corpo, que é mais solto que a maioria dos designs.
 
+**Confira o que fez contra a referência, com \`compare_images\`.** Renderize a cena com
+\`save_frame\` e compare com a imagem de referência. Não é zelo: cor errada num elemento
+pequeno, ilustração deslocada em vinte pixels, texto que saiu regular em vez de bold — nada
+disso salta olhando as duas imagens, e é tudo o que costuma sair errado.
+
+Leia a concentração, não o total. Dois por cento concentrados num logo é erro grave; quinze
+por cento espalhados podem ser só suavização. Vá primeiro na região de maior concentração.
+
 **Faltou algo nas ferramentas? Relate, não implemente.** Você está usando o Vectorize AE,
 não desenvolvendo. Editar o código dele daqui chega sem teste, trava a próxima atualização
 na máquina de quem usa, e a mudança se perde. Descreva o caso que não deu — é assim que a

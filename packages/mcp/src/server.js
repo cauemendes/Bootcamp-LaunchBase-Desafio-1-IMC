@@ -28,8 +28,11 @@ import {
   decodePng,
   measureRegion,
   SequenceError,
+  CompareError,
   CutoutError,
+  compareImages,
   contentBounds,
+  differenceImage,
   cropImage,
   encodePng,
   isolateComponent,
@@ -388,6 +391,97 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
     const bytes = fs.readFileSync(caminho);
     return decodePng(new Uint8Array(bytes), (b) => new Uint8Array(zlib.inflateSync(Buffer.from(b))));
   };
+
+  server.registerTool(
+    "compare_images",
+    {
+      title: "Comparar referência e resultado",
+      description:
+        "Compara dois PNGs do mesmo tamanho e diz QUANTO e ONDE eles diferem. Use a " +
+        "referência original e o frame renderizado da cena reconstruída.\n\n" +
+        "Olhar as duas imagens responde bem \"está parecido?\" e mal \"o que falta?\". Cor " +
+        "errada num elemento pequeno, ilustração deslocada, texto que saiu regular em vez " +
+        "de bold — nada disso salta na tela, e é tudo o que costuma sair errado.\n\n" +
+        "Devolve a proporção de pixels diferentes, um mapa por região dizendo onde a " +
+        "diferença se concentra, e opcionalmente uma imagem com o que difere marcado em " +
+        "vermelho. Não confunda proporção baixa com acerto: 2% concentrados num rosto ou " +
+        "num logo é erro grave, e 15% espalhados podem ser só suavização.",
+      inputSchema: {
+        reference: z.string().describe("PNG da referência original."),
+        result: z.string().describe("PNG do resultado — normalmente o que save_frame gravou."),
+        tolerance: z
+          .number()
+          .optional()
+          .describe(
+            "Diferença de cor que ainda conta como igual. Padrão 12, que absorve " +
+              "compressão e suavização. Aumente se a referência for JPEG."
+          ),
+        diffOut: z
+          .string()
+          .optional()
+          .describe(
+            "Caminho para gravar a imagem de diferença: o resultado esmaecido com o que " +
+              "difere em vermelho. Peça quando o número indicar que vale olhar."
+          ),
+      },
+    },
+    async ({ reference, result: caminhoResultado, tolerance, diffOut }) => {
+      let ref;
+      let res;
+
+      try {
+        ref = carregarPng(reference);
+        res = carregarPng(caminhoResultado);
+      } catch (err) {
+        return asError(`Não consegui ler as imagens: ${err.message}`);
+      }
+
+      let r;
+      try {
+        r = compareImages(ref, res, { tolerance });
+      } catch (err) {
+        if (err instanceof CompareError) return asError(err.message);
+        throw err;
+      }
+
+      // Ordenar por concentração é o que transforma o mapa em lista de suspeitos. Uma
+      // grade inteira em ordem de leitura obrigaria quem lê a fazer essa ordenação.
+      const suspeitos = r.blocks
+        .filter((b) => b.ratio > 0.02)
+        .sort((a, b) => b.ratio - a.ratio)
+        .slice(0, 5)
+        .map(
+          (b) =>
+            `  • ${Math.round(b.ratio * 100)}% em ${b.x},${b.y} ` +
+            `(${b.width}×${b.height})`
+        );
+
+      let notaDiff = "";
+      if (diffOut) {
+        try {
+          const bytes = encodePng(differenceImage(res, r), (x) =>
+            new Uint8Array(zlib.deflateSync(Buffer.from(x)))
+          );
+          fs.writeFileSync(diffOut, bytes);
+          notaDiff = `\n\nImagem de diferença: ${diffOut} (o que difere está em vermelho).`;
+        } catch (err) {
+          notaDiff = `\n\nNão consegui gravar a imagem de diferença: ${err.message}`;
+        }
+      }
+
+      return asText(
+        `${(r.ratio * 100).toFixed(1)}% dos pixels diferem ` +
+          `(${r.differing} de ${r.total}), tolerância ${tolerance ?? 12}.\n\n` +
+          (suspeitos.length
+            ? `Onde a diferença se concentra:\n${suspeitos.join("\n")}\n\n` +
+              "Vá para a região de maior concentração primeiro: é lá que está o elemento " +
+              "errado, e não no que está espalhado."
+            : "A diferença está espalhada e diluída, sem região concentrada — " +
+              "compatível com suavização e compressão, não com elemento errado.") +
+          notaDiff
+      );
+    }
+  );
 
   server.registerTool(
     "crop_image",
