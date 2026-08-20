@@ -35,5 +35,11 @@ dist/*
 # só apagando o arquivo depois.
 brands/
 
+# Ponteiro de marca ativa. Uma versão anterior o gravava ao lado dos perfis, e com
+# VECTORIZE_AE_BRAND_DIR apontando para a raiz do projeto ele acabava aqui. Hoje ele mora
+# na pasta de dados da máquina — de propósito, para uma equipe compartilhar o catálogo sem
+# compartilhar em qual cliente cada um está. O ignore cobre o resíduo.
+brand-active.json
+
 # `marcas/` esteve numa instrução anterior. Fica ignorado para quem chegou a criá-la.
 marcas/
