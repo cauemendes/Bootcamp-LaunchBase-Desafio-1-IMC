@@ -305,19 +305,46 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       },
     },
     async (args) => {
-      // Timeout generoso: quando a API direta não entrega, o painel cai para a fila
-      // de render, que abre progresso e leva bem mais que os 60s de antes.
-      const { result } = await call("save_frame", args, { timeoutMs: 180_000 });
+      // ── Preto sólido não é resposta, é sintoma ──────────────────────────────
+      // Os dois caminhos de render falham de formas diferentes. `saveFrameToPng` às vezes
+      // retorna sem gravar nada — detectável na hora. A fila de render, num projeto com
+      // footage de vídeo offline, entrega PRETO SÓLIDO: arquivo válido, tamanho normal,
+      // imagem vazia. Esse é muito pior, porque passa por frame: quem medir cor nele
+      // recebe respostas coerentes e a cena sai inteira escura.
+      //
+      // Já que os dois falham em situações diferentes, receber preto de um é motivo para
+      // tentar o outro — não para devolver o preto.
+      //
+      // Timeout generoso: a fila de render abre progresso e leva bem mais que 60s.
+      const renderizar = async (extra) => {
+        const { result } = await call("save_frame", { ...args, ...extra }, { timeoutMs: 180_000 });
+        const bytes = fs.readFileSync(result.path);
+        return { result, bytes, uniforme: frameUniforme(bytes) };
+      };
 
-      let bytes;
+      let tentativa;
+      let recuperado = null;
+
       try {
-        bytes = fs.readFileSync(result.path);
+        tentativa = await renderizar({});
       } catch (err) {
-        return asError(
-          `O After Effects gravou o frame em ${result.path}, mas não consegui ler o arquivo: ${err.message}`
-        );
+        return asError(`Não consegui renderizar o frame: ${err.message}`);
       }
 
+      if (tentativa.uniforme && tentativa.result.method === "renderQueue") {
+        try {
+          const direto = await renderizar({ method: "direct" });
+          if (!direto.uniforme) {
+            recuperado = tentativa.result.method;
+            tentativa = direto;
+          }
+        } catch {
+          // O caminho direto também não colou. Segue com o que se tem — o aviso de frame
+          // uniforme abaixo explica o que a pessoa está vendo.
+        }
+      }
+
+      const { result, bytes } = tentativa;
       const base64 = bytes.toString("base64");
 
       // ── Confere o tamanho contra a comp ────────────────────────────────────
@@ -333,7 +360,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       const divergente =
         medidas && (medidas.width !== result.width || medidas.height !== result.height);
 
-      const uniforme = frameUniforme(bytes);
+      const uniforme = tentativa.uniforme;
 
       return {
         content: [
