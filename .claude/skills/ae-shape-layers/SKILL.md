@@ -233,3 +233,28 @@ layer.property("ADBE Transform Group").property("ADBE Scale").setValue([f * 100,
 Prefira `contain` como padrão. `cover` corta, e cortar é irreversível: some conteúdo sem
 deixar rastro. Tarja é feia e visível, e quem olha decide o que fazer. E avise quando
 escalar — uma montagem de dezenas de cenas erra todas de uma vez, em silêncio.
+
+## Isolar ilustração por conectividade, não por cor nem por retângulo
+
+Ao tirar uma ilustração de um frame para usar como pixel, três critérios estão
+disponíveis e só um funciona no caso difícil.
+
+**Retângulo** separa o que já está separado. Quando um ícone ou a borda de um cartão cai na
+mesma faixa de X da ilustração, não existe valor certo: com folga para pegar a ilustração
+inteira ele leva o vizinho; apertado para excluir o vizinho ele corta a ilustração. O
+conflito é geométrico, e nenhuma tolerância resolve.
+
+**Cor** falha do jeito pior quando o vizinho tem a mesma tinta — o que é o normal numa arte
+de paleta fechada, onde tudo tem o mesmo contorno escuro.
+
+**Conectividade** resolve: a ilustração é o que está ligado a um ponto dentro dela. Rode
+sobre o alfa, depois de tirar o fundo — antes disso tudo está conectado a tudo.
+
+Use **8-conectividade**. Com 4, dois pedaços do mesmo desenho que se tocam só pela quina
+contam como coisas separadas, e num traço fino diagonal isso é frequente: jogaria metade da
+ilustração fora. O erro simétrico — trazer um vizinho que encosta de canto — é visível e se
+apaga; perder metade do desenho passa por "a ilustração é assim mesmo".
+
+E o isolamento tem que rodar **antes** de calcular a caixa do conteúdo. Se a caixa for
+calculada sobre a união de tudo o que sobrou opaco, o aviso de "encostando na borda" dispara
+por causa do elemento errado, e apertar o recorte nunca separa os dois.

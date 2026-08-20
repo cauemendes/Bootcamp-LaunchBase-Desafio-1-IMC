@@ -188,6 +188,19 @@ for ficar sobre algo reconstruído — sem isso o retângulo do recorte tapa o q
 e o defeito parece de ordem de camada. Áreas internas da mesma cor do fundo são
 preservadas, então o branco de dentro do desenho não vira buraco.
 
+**Ilustração encostada em outro elemento: use \`isolate\`.** Retângulo separa o que já está
+separado. Quando um ícone ou uma borda de cartão fica na mesma faixa de X ou Y da
+ilustração, nenhum retângulo resolve — com folga para pegar a ilustração inteira ele leva o
+vizinho, apertado para excluir o vizinho ele corta a ilustração. Passe \`isolate\` com um
+ponto no meio do corpo da ilustração e o vizinho desaparece inteiro, não em fatia.
+
+Isso separa por conectividade, não por cor, então funciona também quando o vizinho tem
+exatamente a mesma tinta — o caso comum numa arte de paleta fechada.
+
+E ilustração que aparece em mais de uma cena é **um arquivo só**: recorte uma vez e
+reaproveite, mudando só posição e escala. Recortar de novo em cada cena dá arquivos
+ligeiramente diferentes do mesmo desenho, e a diferença aparece no vídeo montado.
+
 **Meça a região com folga.** Folga se tira depois com \`trim: true\`, que aperta o recorte
 na ilustração e devolve as coordenadas certas. Corte não se recupera: se o recorte cortar
 o desenho, o arquivo abre normal, com a ilustração dentro e o fundo limpo, e só de perto

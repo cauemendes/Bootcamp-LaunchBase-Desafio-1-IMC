@@ -254,12 +254,25 @@ export function trimTo(img, box) {
  * Roda sobre o alfa, então precisa vir depois de `removeFlatBackground` — antes disso a
  * imagem é um bloco opaco só, e tudo está conectado a tudo.
  *
+ * ── Por que 8-conectividade, e não 4 ─────────────────────────────────────────
+ * Com 4-conectividade, dois pedaços do mesmo desenho que se tocam apenas pela quina
+ * contam como coisas separadas. Isso não é hipótese: num traço fino diagonal — laço de
+ * tênis, cabo, contorno inclinado de um pixel — a ligação entre duas partes é
+ * frequentemente só diagonal, e o resultado seria jogar metade da ilustração fora.
+ *
+ * O erro simétrico existe: com 8-conectividade, um vizinho que encosta de canto na
+ * ilustração vem junto. Mas os dois erros não têm o mesmo custo. Trazer uma lasca a mais
+ * é visível e se apaga; perder metade do desenho passa por "a ilustração é assim mesmo".
+ *
  * @param {{width, height, data: Uint8Array}} img  RGBA já com o fundo transparente
  * @param {{x: number, y: number}} semente  ponto dentro da ilustração, em coordenada
  *   local do recorte
+ * @param {Object} [opts]
+ * @param {4|8} [opts.connectivity]  8 por padrão; 4 só quando se quer separar partes
+ *   que se tocam apenas pela quina
  * @returns {{width, height, data: Uint8Array, kept: number, removed: number}}
  */
-export function isolateComponent(img, semente) {
+export function isolateComponent(img, semente, opts = {}) {
   const { width, height } = img;
   const sx = Math.round(semente?.x);
   const sy = Math.round(semente?.y);
@@ -298,15 +311,29 @@ export function isolateComponent(img, semente) {
 
   empilhar(sy * width + sx);
 
+  const diagonal = opts.connectivity !== 4;
+
   while (inicio < fim) {
     const p = fila[inicio++];
     const x = p % width;
     const y = (p - x) / width;
 
-    if (x > 0) empilhar(p - 1);
-    if (x < width - 1) empilhar(p + 1);
-    if (y > 0) empilhar(p - width);
-    if (y < height - 1) empilhar(p + width);
+    const esq = x > 0;
+    const dir = x < width - 1;
+    const cima = y > 0;
+    const baixo = y < height - 1;
+
+    if (esq) empilhar(p - 1);
+    if (dir) empilhar(p + 1);
+    if (cima) empilhar(p - width);
+    if (baixo) empilhar(p + width);
+
+    if (diagonal) {
+      if (esq && cima) empilhar(p - width - 1);
+      if (dir && cima) empilhar(p - width + 1);
+      if (esq && baixo) empilhar(p + width - 1);
+      if (dir && baixo) empilhar(p + width + 1);
+    }
   }
 
   let kept = 0;

@@ -308,3 +308,41 @@ test("duas partes da mesma ilustração ligadas por um traço fino ficam juntas"
 
   assert.equal(iso.data[(5 * img.width + 15) * 4 + 3], 255, "o vizinho agora está ligado");
 });
+
+test("partes ligadas só pela quina ficam juntas — 8-conectividade é o padrão", () => {
+  // ── Por que este teste existe ────────────────────────────────────────────────
+  // Com 4-conectividade, dois pedaços do mesmo desenho que se tocam apenas pela quina
+  // contam como coisas separadas. Num traço fino diagonal — laço de tênis, cabo, contorno
+  // inclinado de um pixel — a ligação entre partes é frequentemente só diagonal, e o
+  // resultado seria jogar metade da ilustração fora.
+  //
+  // O erro simétrico existe: um vizinho que encosta de canto vem junto. Mas trazer uma
+  // lasca a mais é visível e se apaga; perder metade do desenho passa por "a ilustração é
+  // assim mesmo".
+  const width = 9;
+  const height = 9;
+  const data = new Uint8Array(width * height * 4);
+
+  const pintar = (x, y, cor) => {
+    const i = (y * width + x) * 4;
+    data[i] = cor[0];
+    data[i + 1] = cor[1];
+    data[i + 2] = cor[2];
+    data[i + 3] = 255;
+  };
+
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) pintar(x, y, FUNDO);
+
+  // Dois blocos 2×2 encostando só pela diagonal: (2,2)-(3,3) e (4,4)-(5,5).
+  for (let y = 2; y <= 3; y++) for (let x = 2; x <= 3; x++) pintar(x, y, TINTA);
+  for (let y = 4; y <= 5; y++) for (let x = 4; x <= 5; x++) pintar(x, y, TINTA);
+
+  const semFundo = removeFlatBackground({ width, height, data }, { feather: false });
+  const alfaEm = (r, x, y) => r.data[(y * width + x) * 4 + 3];
+
+  const padrao = isolateComponent(semFundo, { x: 2, y: 2 });
+  assert.equal(alfaEm(padrao, 5, 5), 255, "o padrão mantém a parte ligada pela quina");
+
+  const apertado = isolateComponent(semFundo, { x: 2, y: 2 }, { connectivity: 4 });
+  assert.equal(alfaEm(apertado, 5, 5), 0, "com 4 ela é descartada");
+});
