@@ -99,23 +99,30 @@ if command -v git >/dev/null 2>&1 && git -C "$REPO_ROOT" rev-parse --git-dir >/d
   COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')"
   echo "▸ Repositório: commit $COMMIT"
 
-  # `dist/` é gerado, e até agora era gerado por este script — o que travava o pull
-  # seguinte. Se ainda estiver sujo de uma execução antiga, o pull vai continuar
-  # falhando até alguém desfazer.
-  if ! git -C "$REPO_ROOT" diff --quiet -- dist/bridge-panel.jsx 2>/dev/null; then
+  # Qualquer arquivo rastreado modificado faz o `git pull` abortar com "your local
+  # changes would be overwritten" — e o instalador, rodando na linha seguinte, reinstala
+  # a versão antiga com um "✓" no fim. A checagem olhava só `dist/`, e o pull travou por
+  # `packages/mcp/src/server.js`: um arquivo a mais para o aviso não cobrir.
+  SUJOS="$(git -C "$REPO_ROOT" diff --name-only 2>/dev/null || true)"
+
+  if [ -n "$SUJOS" ]; then
     cat <<AVISO
 
-  ⚠️  dist/bridge-panel.jsx está modificado na árvore de trabalho.
+  ⚠️  Há arquivos modificados na árvore de trabalho:
 
-      Ele é gerado, então a modificação é resto de uma instalação antiga — e é o que
-      faz o git pull abortar com "your local changes would be overwritten". Enquanto
-      isso não for desfeito, cada pull falha e cada instalação seguinte reinstala a
-      versão que já estava aqui.
+$(printf '        %s\n' $SUJOS)
 
-      Desfaça e puxe de novo:
+      Isso faz o git pull abortar com "your local changes would be overwritten", e a
+      instalação logo abaixo reinstala a versão que já estava aqui — com um "✓" no fim,
+      o que parece sucesso.
 
-        git -C "$REPO_ROOT" checkout -- dist/bridge-panel.jsx
+      Se você não fez essas mudanças de propósito, guarde e puxe de novo:
+
+        git -C "$REPO_ROOT" stash
         git -C "$REPO_ROOT" pull
+
+      \`stash\` guarda, não apaga: \`git stash pop\` traz de volta se fizer falta. Para
+      ver o que mudou antes de decidir: \`git -C "$REPO_ROOT" diff\`
 
 AVISO
   fi
