@@ -30,6 +30,7 @@ import {
   SequenceError,
   cropImage,
   encodePng,
+  removeFlatBackground,
   normalizeScene,
   planSequence,
   resolveAnimation,
@@ -385,9 +386,23 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .describe(
             "Caminho do PNG a gravar. Omitido = ao lado da origem, com sufixo da região."
           ),
+        removeBackground: z
+          .boolean()
+          .optional()
+          .describe(
+            "Deixa transparente o fundo chapado ligado à borda do recorte. USE quando a " +
+              "ilustração vai por cima de algo reconstruído — sem isso o retângulo do " +
+              "recorte tapa o que está atrás, e o defeito parece de ordem de camada. " +
+              "Áreas internas da mesma cor do fundo são preservadas: o fundo é o que " +
+              "está conectado à borda, não toda ocorrência daquela cor."
+          ),
+        backgroundTolerance: z
+          .number()
+          .optional()
+          .describe("Quanto a cor pode variar e ainda contar como fundo. Padrão 10."),
       },
     },
-    async ({ path: origem, x, y, width, height, out }) => {
+    async ({ path: origem, x, y, width, height, out, removeBackground, backgroundTolerance }) => {
       let img;
       try {
         img = carregarPng(origem);
@@ -402,6 +417,14 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         return asError(err.message);
       }
 
+      let recorteFinal = recorte;
+      let fundo = null;
+
+      if (removeBackground) {
+        fundo = removeFlatBackground(recorte, { tolerance: backgroundTolerance });
+        recorteFinal = { width: fundo.width, height: fundo.height, data: fundo.data };
+      }
+
       const destino =
         out ??
         origem.replace(
@@ -410,7 +433,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         );
 
       try {
-        const bytes = encodePng(recorte, (b) => new Uint8Array(zlib.deflateSync(Buffer.from(b))));
+        const bytes = encodePng(recorteFinal, (b) => new Uint8Array(zlib.deflateSync(Buffer.from(b))));
         fs.writeFileSync(destino, bytes);
       } catch (err) {
         return asError(`Recortei mas não consegui gravar em ${destino}: ${err.message}`);
@@ -421,8 +444,26 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       const aparado =
         recorte.width !== Math.round(width) || recorte.height !== Math.round(height);
 
+      // Quanto do recorte virou transparente é a única forma de perceber, sem abrir o
+      // arquivo, que a remoção de fundo pegou a coisa errada — quase tudo significa que a
+      // ilustração foi junto; quase nada, que o fundo não era chapado.
+      const proporcao = fundo ? fundo.removed / (recorte.width * recorte.height) : 0;
+
+      const notaFundo = !fundo
+        ? ""
+        : `\n\nFundo ${fundo.color} removido: ${Math.round(proporcao * 100)}% do recorte ` +
+          "virou transparente." +
+          (proporcao > 0.9
+            ? " ISSO É MUITO — provavelmente a ilustração foi removida junto. Tente de novo " +
+              "com backgroundTolerance menor, ou sem remover o fundo."
+            : proporcao < 0.02
+              ? " ISSO É POUCO — o fundo pode não ser chapado, ou o recorte pode estar todo " +
+                "dentro da ilustração. Confira olhando o arquivo antes de usar."
+              : "");
+
       return asText(
         `Gravei ${destino} — ${recorte.width}×${recorte.height} em ${recorte.x},${recorte.y}.` +
+          notaFundo +
           (aparado
             ? `\n\nATENÇÃO: o recorte foi aparado na borda da imagem (você pediu ` +
               `${Math.round(width)}×${Math.round(height)}). Use as coordenadas e o tamanho ` +

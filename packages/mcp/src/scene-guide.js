@@ -169,7 +169,14 @@ ondulado, cabedal em três tons e sombra no chão não é — e medir primitivas
 borrão de formas coloridas.
 
 \`crop_image\` recorta a região do frame de referência e grava um PNG. O caminho vai direto
-em \`source\` de uma forma \`image\`. A ilustração fica com os pixels originais, o resto da
+em \`source\` de uma forma \`image\`. Passe \`removeBackground: true\` sempre que a ilustração
+for ficar sobre algo reconstruído — sem isso o retângulo do recorte tapa o que está atrás,
+e o defeito parece de ordem de camada. Áreas internas da mesma cor do fundo são
+preservadas, então o branco de dentro do desenho não vira buraco.
+
+A ferramenta diz quanto do recorte virou transparente. Perto de 100% significa que a
+ilustração foi removida junto; perto de 0%, que o fundo não era chapado. Nos dois casos,
+olhe o arquivo antes de usar. A ilustração fica com os pixels originais, o resto da
 cena continua vetor, e é o resto que se anima — cartão que entra, barra que cresce, botão
 que pulsa. A ilustração normalmente só precisa de posição e escala.
 
