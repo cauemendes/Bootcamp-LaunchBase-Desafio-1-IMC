@@ -153,6 +153,15 @@ A posição é a baseline da **primeira** linha. \`lineHeight\` é de baseline a
 pixels — meça as duas baselines no frame e subtraia. Sem ele o After Effects usa 1,2 × o
 corpo, que é mais solto que a maioria dos designs.
 
+**De onde vem a referência.** Se a pessoa pediu para redesenhar algo que está no After
+Effects — a comp aberta, o que está na tela agora, uma comp que já existe no projeto —,
+**você mesmo captura**: \`save_frame\` renderiza o frame e devolve o caminho do arquivo, que
+serve de entrada para \`measure_image\` e \`crop_image\`.
+
+Passe \`path\` para guardar o frame fora da pasta temporária quando o trabalho for longo. E
+não peça um print à pessoa: exportar à mão e passar o caminho é justamente o trabalho que
+esta ferramenta existe para eliminar.
+
 **Decida por elemento: vetor ou pixel.** Reconstruir com formas é o que dá editabilidade,
 e é para isso que esta ferramenta existe. Mas há coisa que não se reconstrói, e insistir
 produz um resultado pior que honesto — parece tentativa.

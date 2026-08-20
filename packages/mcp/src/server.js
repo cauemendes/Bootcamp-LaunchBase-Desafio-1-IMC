@@ -272,15 +272,31 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
     {
       title: "Renderizar um frame",
       description:
-        "Renderiza um frame da composição e devolve a imagem, para você VER o resultado do " +
-        "que fez. Use depois de construir ou animar: nenhuma chamada ter dado erro não é a " +
-        "mesma coisa que o resultado ter ficado bom.",
+        "Renderiza um frame da composição, devolve a imagem e o caminho do arquivo.\n\n" +
+        "Serve para DUAS coisas, e a segunda é fácil de esquecer:\n\n" +
+        "1. VER o resultado do que você fez. Nenhuma chamada ter dado erro não é a mesma " +
+        "coisa que o resultado ter ficado bom.\n\n" +
+        "2. CAPTURAR a referência a reconstruir. Quando alguém pede para redesenhar o que " +
+        "está na tela do After Effects, ou uma comp que já existe no projeto, a referência " +
+        "é isto — não um arquivo que a pessoa precise exportar e te mandar. Renderize o " +
+        "frame, passe `path` para guardá-lo onde quiser, e use esse caminho em " +
+        "`measure_image` e `crop_image`. Pedir um print à pessoa quando você mesmo pode " +
+        "renderizar o frame é trabalho manual que a ferramenta existe para eliminar.",
       inputSchema: {
         compName: z.string().optional().describe("Composição. Omitido = a ativa."),
         time: z
           .number()
           .optional()
           .describe("Instante em segundos. Omitido = o tempo atual da timeline."),
+        path: z
+          .string()
+          .optional()
+          .describe(
+            "Onde gravar o PNG. Omitido = pasta temporária, apagada depois de um tempo. " +
+              "PASSE um caminho quando o frame for a referência de um trabalho longo: o " +
+              "arquivo temporário pode ser limpo no meio, e aí a referência desaparece " +
+              "com a reconstrução ainda em andamento."
+          ),
       },
     },
     async (args) => {
@@ -336,7 +352,11 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
                   "Confira a resolução da composição (o seletor Full / Half / Third do " +
                   "painel de composição) e renderize de novo.\n\n"
                 : "") +
-              `${result.comp} · ${result.width}×${result.height} · t=${result.time}s` +
+              `${result.comp} · ${result.width}×${result.height} · t=${result.time}s\n` +
+              // O caminho é o que permite medir e recortar em cima deste frame. Sem ele
+              // na resposta, quem está do outro lado pede um print à pessoa — que é
+              // exatamente o trabalho manual que esta ferramenta elimina.
+              `Arquivo: ${result.path}` +
               // Qual caminho funcionou importa: no 26.3 do macOS a API direta retorna
               // sem erro e não grava nada, e a fila é o contorno. Saber disso evita
               // rediagnosticar quando ficar lento, e revela quando a API voltar a

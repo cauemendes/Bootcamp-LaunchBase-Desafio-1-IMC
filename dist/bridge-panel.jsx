@@ -4,18 +4,18 @@
  * GERADO AUTOMATICAMENTE — não edite este arquivo.
  *
  * Produzido por scripts/bundle-jsx.mjs a partir de:
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/bridge-panel.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/tools.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/util.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-shape.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-font.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-text.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-read.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-frame.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-anim.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-image.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/ae-sequence.jsx
- *   ../../../../../home/user/Bootcamp-LaunchBase-Desafio-1-IMC/packages/jsx/lib/build-scene.jsx
+ *   packages/jsx/bridge-panel.jsx
+ *   packages/jsx/lib/tools.jsx
+ *   packages/jsx/lib/util.jsx
+ *   packages/jsx/lib/ae-shape.jsx
+ *   packages/jsx/lib/ae-font.jsx
+ *   packages/jsx/lib/ae-text.jsx
+ *   packages/jsx/lib/ae-read.jsx
+ *   packages/jsx/lib/ae-frame.jsx
+ *   packages/jsx/lib/ae-anim.jsx
+ *   packages/jsx/lib/ae-image.jsx
+ *   packages/jsx/lib/ae-sequence.jsx
+ *   packages/jsx/lib/build-scene.jsx
  *
  * Edite os originais em packages/jsx/ e rode a instalação de novo.
  */
@@ -1474,13 +1474,17 @@ function vecPastaDeFrames() {
  * Apagar cedo quebraria a reconstrução; deixar acumular enche a máquina de quem usa com
  * megabytes num diretório que ninguém abre.
  *
- * Cinco minutos resolve os dois lados. Um ciclo de renderizar e medir leva segundos, e
- * um punhado de frames é o máximo que chega a coexistir — o suficiente também para
- * comparar dois ou três instantes de uma animação, que é o outro uso legítimo.
+ * Vinte minutos resolve os dois lados. Cinco era pouco: um frame também serve de
+ * REFERÊNCIA a reconstruir, e uma reconstrução mede o mesmo arquivo várias vezes ao longo
+ * de uma sessão inteira. Apagá-lo no meio faria a referência desaparecer com o trabalho
+ * em andamento — e o erro apareceria como "não consigo ler o arquivo", longe da causa.
+ *
+ * Para referência de trabalho longo, o certo é passar `path` em `save_frame` e guardar o
+ * frame fora desta pasta. Vinte minutos é a rede de segurança para quem não passou.
  */
 function vecLimparFramesVelhos(pasta) {
   try {
-    var limite = new Date().getTime() - 300 * 1000;
+    var limite = new Date().getTime() - 1200 * 1000;
     var arquivos = pasta.getFiles();
 
     for (var i = 0; i < arquivos.length; i++) {
