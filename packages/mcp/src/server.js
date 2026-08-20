@@ -28,9 +28,11 @@ import {
   decodePng,
   measureRegion,
   SequenceError,
+  contentBounds,
   cropImage,
   encodePng,
   removeFlatBackground,
+  trimTo,
   normalizeScene,
   planSequence,
   resolveAnimation,
@@ -400,9 +402,28 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           .number()
           .optional()
           .describe("Quanto a cor pode variar e ainda contar como fundo. Padrão 10."),
+        trim: z
+          .boolean()
+          .optional()
+          .describe(
+            "Aperta o recorte na ilustração depois de tirar o fundo, e devolve as " +
+              "coordenadas apertadas. Só encolhe. Útil quando você mediu com folga de " +
+              "propósito — o que é a forma certa de medir, porque folga se tira e corte " +
+              "não se recupera."
+          ),
       },
     },
-    async ({ path: origem, x, y, width, height, out, removeBackground, backgroundTolerance }) => {
+    async ({
+      path: origem,
+      x,
+      y,
+      width,
+      height,
+      out,
+      removeBackground,
+      backgroundTolerance,
+      trim,
+    }) => {
       let img;
       try {
         img = carregarPng(origem);
@@ -419,10 +440,21 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
 
       let recorteFinal = recorte;
       let fundo = null;
+      let caixa = null;
+      let posX = recorte.x;
+      let posY = recorte.y;
 
       if (removeBackground) {
         fundo = removeFlatBackground(recorte, { tolerance: backgroundTolerance });
         recorteFinal = { width: fundo.width, height: fundo.height, data: fundo.data };
+
+        caixa = contentBounds(recorteFinal);
+
+        if (trim && !caixa.empty) {
+          recorteFinal = trimTo(recorteFinal, caixa);
+          posX = recorte.x + caixa.x;
+          posY = recorte.y + caixa.y;
+        }
       }
 
       const destino =
@@ -449,6 +481,19 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
       // ilustração foi junto; quase nada, que o fundo não era chapado.
       const proporcao = fundo ? fundo.removed / (recorte.width * recorte.height) : 0;
 
+      // ── O aviso que faltava ─────────────────────────────────────────────────
+      // Pixel opaco na borda do recorte significa que a ilustração continua além dele: o
+      // recorte cortou o desenho. É erro que passa fácil — o arquivo abre, tem a
+      // ilustração dentro, o fundo saiu direito, e só de perto se vê que falta um pedaço.
+      // A essa altura a cena já está montada.
+      const notaCorte =
+        caixa && caixa.touches.length > 0 && !caixa.empty
+          ? `\n\nATENÇÃO: sobrou desenho encostando na borda (${caixa.touches.join(", ")}). ` +
+            "Isso quase sempre quer dizer que a ILUSTRAÇÃO FOI CORTADA — ela continua além " +
+            "do recorte. Refaça com mais folga desse lado. Medir com folga é o certo: " +
+            "folga se tira depois com `trim`, corte não se recupera."
+          : "";
+
       const notaFundo = !fundo
         ? ""
         : `\n\nFundo ${fundo.color} removido: ${Math.round(proporcao * 100)}% do recorte ` +
@@ -463,6 +508,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
 
       return asText(
         `Gravei ${destino} — ${recorte.width}×${recorte.height} em ${recorte.x},${recorte.y}.` +
+          notaCorte +
           notaFundo +
           (aparado
             ? `\n\nATENÇÃO: o recorte foi aparado na borda da imagem (você pediu ` +
@@ -470,8 +516,8 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
               "ACIMA na forma `image`, não os que você pediu, senão a ilustração fica " +
               "deslocada."
             : "") +
-          `\n\nUse em: { "shape": { "type": "image", "x": ${recorte.x}, "y": ${recorte.y}, ` +
-          `"w": ${recorte.width}, "h": ${recorte.height}, "source": "${destino}" } }`
+          `\n\nUse em: { "shape": { "type": "image", "x": ${posX}, "y": ${posY}, ` +
+          `"w": ${recorteFinal.width}, "h": ${recorteFinal.height}, "source": "${destino}" } }`
       );
     }
   );

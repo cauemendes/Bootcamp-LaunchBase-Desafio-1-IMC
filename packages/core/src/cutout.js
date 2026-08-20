@@ -161,3 +161,68 @@ function suavizarBorda(img, fundo, alvo, tolerance) {
     }
   }
 }
+
+/**
+ * Caixa do que sobrou opaco, e se ela encosta na borda do recorte.
+ *
+ * ── Por que encostar na borda importa tanto ───────────────────────────────────
+ * Se há pixel opaco na borda do recorte, a ilustração **continua além dele** — o recorte
+ * cortou o desenho. É um erro que passa fácil: o arquivo abre, tem a ilustração dentro,
+ * o fundo saiu direito. Só olhando de perto se vê que falta um pedaço, e a essa altura a
+ * cena já está montada.
+ *
+ * Medir a região de uma ilustração olhando um frame é chute com régua. Errar alguns
+ * pixels é o normal, não a exceção — então a ferramenta tem que dizer quando errou, e de
+ * que lado.
+ *
+ * @returns {{x, y, width, height, touches: string[], empty: boolean}}
+ */
+export function contentBounds(img) {
+  const { width, height, data } = img;
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] === 0) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < 0) {
+    return { x: 0, y: 0, width: 0, height: 0, touches: [], empty: true };
+  }
+
+  const touches = [];
+  if (minX === 0) touches.push("esquerda");
+  if (maxX === width - 1) touches.push("direita");
+  if (minY === 0) touches.push("topo");
+  if (maxY === height - 1) touches.push("base");
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+    touches,
+    empty: false,
+  };
+}
+
+/** Recorta uma imagem RGBA para uma caixa interna. Só encolhe. */
+export function trimTo(img, box) {
+  const data = new Uint8Array(box.width * box.height * 4);
+
+  for (let linha = 0; linha < box.height; linha++) {
+    const origem = ((box.y + linha) * img.width + box.x) * 4;
+    data.set(img.data.subarray(origem, origem + box.width * 4), linha * box.width * 4);
+  }
+
+  return { width: box.width, height: box.height, data };
+}

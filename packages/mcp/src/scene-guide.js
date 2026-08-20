@@ -174,6 +174,12 @@ for ficar sobre algo reconstruído — sem isso o retângulo do recorte tapa o q
 e o defeito parece de ordem de camada. Áreas internas da mesma cor do fundo são
 preservadas, então o branco de dentro do desenho não vira buraco.
 
+**Meça a região com folga.** Folga se tira depois com \`trim: true\`, que aperta o recorte
+na ilustração e devolve as coordenadas certas. Corte não se recupera: se o recorte cortar
+o desenho, o arquivo abre normal, com a ilustração dentro e o fundo limpo, e só de perto
+se vê que falta um pedaço — quando a cena já está montada. A ferramenta avisa se sobrou
+desenho encostando na borda, e esse aviso quer dizer "refaça com mais folga".
+
 A ferramenta diz quanto do recorte virou transparente. Perto de 100% significa que a
 ilustração foi removida junto; perto de 0%, que o fundo não era chapado. Nos dois casos,
 olhe o arquivo antes de usar. A ilustração fica com os pixels originais, o resto da
@@ -197,7 +203,17 @@ montada à mão sai torta.
 Seta grossa e cheia — daquelas em que o corpo é um bloco, não um traço — não é este tipo:
 é uma forma fechada. Faça como \`polygon\` com os vértices do contorno, ou recorte se ela
 tiver afilamento e canto arredondado. \`arrow\` é para seta de traço, incluindo a fina e
-curva que liga dois elementos. O traço para na base da ponta, senão o stroke aparece por dentro
+curva que liga dois elementos.
+
+Nas duas, **a espessura do traço e o tamanho da ponta são medidas, não estimativas**: use
+\`scanLine\` atravessando o traço e atravessando a ponta. Seta é dos elementos em que o
+olho mais erra, porque ela é fina e o contorno escuro engorda a leitura — e uma seta com
+metade da espessura certa salta aos olhos ao lado da original.
+
+E símbolo tipográfico — ≠, ×, →, %, + — costuma ser **texto**, não forma. Reconstruído
+como formas soltas, cada barra vira um elemento posicionado no chute, e o resultado é um
+símbolo que não fecha: as barras não se cruzam onde deviam. Se o desenho for um glifo,
+use \`text\`; se for desenhado à mão com cor própria em cada parte, recorte. O traço para na base da ponta, senão o stroke aparece por dentro
 do bico e engrossa ele.
 
 \`bend\` é o quanto o meio do traço se afasta de uma reta imaginária entre as duas pontas,

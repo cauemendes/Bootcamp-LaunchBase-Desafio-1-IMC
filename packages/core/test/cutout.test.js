@@ -9,7 +9,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DEFAULT_CUTOUT_TOLERANCE, edgeColor, removeFlatBackground } from "../src/cutout.js";
+import {
+  DEFAULT_CUTOUT_TOLERANCE,
+  contentBounds,
+  edgeColor,
+  removeFlatBackground,
+  trimTo,
+} from "../src/cutout.js";
 
 const FUNDO = [247, 245, 240];
 const TINTA = [20, 20, 30];
@@ -146,4 +152,70 @@ test("imagem inteira de uma cor só é removida por completo", () => {
 test("a tolerância padrão está exposta, para quem chama poder explicar o número", () => {
   assert.equal(typeof DEFAULT_CUTOUT_TOLERANCE, "number");
   assert.ok(DEFAULT_CUTOUT_TOLERANCE > 0);
+});
+
+test("desenho encostando na borda é detectado — o recorte cortou a ilustração", () => {
+  // ── Por que este aviso vale mais que a maioria ───────────────────────────────
+  // O arquivo abre, tem a ilustração dentro, o fundo saiu direito. Só de perto se vê que
+  // falta um pedaço — e a essa altura a cena já está montada. Aconteceu com um tênis.
+  const width = 12;
+  const height = 12;
+  const data = new Uint8Array(width * height * 4);
+
+  // Fundo chapado com a forma indo até a borda direita: o desenho continua além.
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const forma = y >= 4 && y <= 8 && x >= 6;
+      const cor = forma ? [20, 20, 30] : [247, 245, 240];
+      data[i] = cor[0];
+      data[i + 1] = cor[1];
+      data[i + 2] = cor[2];
+      data[i + 3] = 255;
+    }
+  }
+
+  const semFundo = removeFlatBackground({ width, height, data }, { feather: false });
+  const caixa = contentBounds(semFundo);
+
+  assert.deepEqual(caixa.touches, ["direita"]);
+  assert.equal(caixa.empty, false);
+});
+
+test("desenho folgado não acusa corte", () => {
+  const semFundo = removeFlatBackground(arte(), { feather: false });
+  const caixa = contentBounds(semFundo);
+
+  assert.deepEqual(caixa.touches, []);
+  assert.equal(caixa.x, 6, "a caixa acha a forma onde ela está");
+  assert.equal(caixa.width, 9);
+});
+
+test("trim aperta na ilustração e devolve a posição certa", () => {
+  // Medir com folga é o certo — folga se tira, corte não se recupera. Mas as coordenadas
+  // que vão para a cena têm que ser as apertadas, senão a ilustração fica deslocada.
+  const semFundo = removeFlatBackground(arte(), { feather: false });
+  const caixa = contentBounds(semFundo);
+  const apertado = trimTo(semFundo, caixa);
+
+  assert.equal(apertado.width, 9);
+  assert.equal(apertado.height, 9);
+  assert.notEqual(apertado.data[3], 0, "o canto do recorte apertado já é desenho");
+});
+
+test("recorte sem nenhum desenho é reportado como vazio, não como corte", () => {
+  const width = 6;
+  const height = 6;
+  const data = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    data[i * 4] = 247;
+    data[i * 4 + 1] = 245;
+    data[i * 4 + 2] = 240;
+    data[i * 4 + 3] = 255;
+  }
+
+  const caixa = contentBounds(removeFlatBackground({ width, height, data }, { feather: false }));
+
+  assert.equal(caixa.empty, true);
+  assert.deepEqual(caixa.touches, []);
 });
