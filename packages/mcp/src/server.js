@@ -335,6 +335,13 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
           {
             type: "text",
             text:
+              (recuperado
+                ? "A fila de render devolveu um frame vazio nesta comp, então usei " +
+                  "saveFrameToPng e deu certo. Isso acontece em projeto com footage de " +
+                  "vídeo offline, mesmo com as camadas desligadas. Vale passar " +
+                  '`method: "direct"` nas próximas chamadas desta comp e poupar a ida à ' +
+                  "fila.\n\n"
+                : "") +
               (uniforme
                 ? `ATENÇÃO: o frame saiu ${uniforme} — não há desenho nenhum nele.\n\n` +
                   "NÃO meça nada aqui e NÃO conclua nada sobre o resultado do que você " +

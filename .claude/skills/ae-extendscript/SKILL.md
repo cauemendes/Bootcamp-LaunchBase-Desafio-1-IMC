@@ -587,18 +587,28 @@ parece problema de render e é problema de destino.
 Escreva numa pasta sua. Neste projeto é `Folder.userData/vectorize-ae/bridge/frames`,
 que é território comprovado: a ponte grava ali o tempo todo.
 
-## `saveFrameToPng` pode existir e não fazer nada (26.3, macOS)
+## Renderizar frame falha dos dois lados, e de formas diferentes
 
-O método está presente, a chamada retorna sem lançar erro, e **nenhum arquivo é
-gravado**. Testado com destino em pasta diferente: mesmo resultado. Não é permissão —
-a mesma pasta aceita escrita por `File.write` na mesma sessão.
+**`saveFrameToPng` às vezes retorna sem gravar nada.** O método está presente, a chamada
+não lança, e nenhum arquivo aparece. Não é permissão: a mesma pasta aceita `File.write` na
+mesma sessão. `typeof comp.saveFrameToPng === "function"` não garante nada — a única
+verificação que vale é conferir `exists` e `length` **depois** da chamada.
 
-Ou seja: `typeof comp.saveFrameToPng === "function"` não garante nada. A única
-verificação que vale é conferir `destino.exists` **depois** da chamada.
+**A fila de render entrega PRETO SÓLIDO** em projeto com footage de vídeo offline, mesmo
+com as camadas desligadas. Arquivo válido, tamanho normal, imagem vazia.
 
-O caminho que funciona é a fila de render com um template de output, mais lento porém
-confiável. `vec.tools.save_frame` ainda não faz esse fallback — é o primeiro item
-pendente.
+O segundo é muito pior que o primeiro. Não gravar nada é detectável na hora; preto sólido
+passa por frame. Quem for medir cor nele recebe respostas coerentes — preto em todo lugar —
+e a reconstrução sai inteira escura, com a suspeita caindo sobre a medição de cor, que está
+funcionando.
+
+Como os dois falham em situações diferentes, o certo é **poder escolher o caminho e trocar
+quando um falhar**, em vez de tratar um como principal e o outro como reserva. E o de fora
+precisa conferir o pixel: uniforme do primeiro ao último byte não é frame, é sintoma.
+
+Nenhuma das duas falhas é constante. `saveFrameToPng` foi observado gravando corretamente
+na mesma versão em que havia falhado antes — provavelmente depende do estado do projeto, e
+não da versão do aplicativo. Não trate nenhum dos dois como "o que funciona".
 
 ## O design de origem raramente é geometricamente regular
 

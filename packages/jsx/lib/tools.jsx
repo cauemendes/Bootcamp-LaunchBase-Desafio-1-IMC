@@ -108,11 +108,12 @@ vec.tools.save_frame = function (args) {
     ? new File(args.path)
     : new File(pasta.fsName + "/frame-" + new Date().getTime() + ".png");
 
-  var saida = vec.saveFrame(comp, time, destino);
+  var saida = vec.saveFrame(comp, time, destino, args.method);
 
   return {
     path: saida.file.fsName,
     method: saida.method,
+    fallbackReason: saida.fallbackReason || null,
     time: round3(saida.time),
     comp: comp.name,
     width: comp.width,

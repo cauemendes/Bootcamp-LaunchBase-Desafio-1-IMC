@@ -1748,7 +1748,7 @@ function vecRestaurarResolucao(comp, antes) {
   } catch (e) {}
 }
 
-vec.saveFrame = function (comp, time, destino) {
+vec.saveFrame = function (comp, time, destino, metodo) {
   var alinhado = vecSnapToFrame(comp, time);
   // A fila de render é a operação mais propensa a diálogo de todo o projeto, e era a
   // única sem esta proteção. Foi por aqui que um aviso de intervalo de tempo derrubou
@@ -1757,19 +1757,39 @@ vec.saveFrame = function (comp, time, destino) {
   var resolucao = vecForcarFull(comp);
 
   try {
-    return vecSaveFrameInterno(comp, alinhado, destino);
+    return vecSaveFrameInterno(comp, alinhado, destino, metodo);
   } finally {
     vecRestaurarResolucao(comp, resolucao);
     vec.restoreDialogs(silenciado);
   }
 };
 
-function vecSaveFrameInterno(comp, alinhado, destino) {
-  if (typeof comp.saveFrameToPng === "function") {
+/**
+ * @param {String} [metodo]  "auto" (padrão), "direct" ou "queue".
+ *
+ * ── Por que dá para escolher o caminho ────────────────────────────────────────
+ * Os dois falham, e falham em situações diferentes. `saveFrameToPng` às vezes retorna sem
+ * erro e sem gravar nada. A fila de render, num projeto com footage de vídeo offline,
+ * entrega PRETO SÓLIDO — arquivo válido, tamanho normal, imagem vazia.
+ *
+ * O segundo é muito pior que o primeiro: não gravar nada é detectável na hora, e preto
+ * sólido passa por frame. Quem for medir cor nele recebe respostas coerentes e a cena sai
+ * inteira escura, com a suspeita caindo na medição de cor.
+ *
+ * Por isso o caminho é escolhível: quem detectou preto de fora pode pedir o outro método
+ * em vez de receber o mesmo preto de novo.
+ */
+function vecSaveFrameInterno(comp, alinhado, destino, metodo) {
+  metodo = metodo || "auto";
+  var motivo = null;
+
+  if (metodo !== "queue" && typeof comp.saveFrameToPng === "function") {
     try {
       comp.saveFrameToPng(alinhado, destino);
     } catch (e) {
-      // Falha explícita é informação; a silenciosa é que exige a conferência abaixo.
+      // O texto da exceção é a única pista de por que o caminho documentado não colou.
+      // Engolir sem guardar foi o que manteve isso um mistério por semanas.
+      motivo = vec.describeError(e);
     }
 
     // A conferência no disco é o ponto inteiro desta função.
@@ -1777,9 +1797,29 @@ function vecSaveFrameInterno(comp, alinhado, destino) {
     if (conferencia.exists && conferencia.length > 0) {
       return { file: conferencia, method: "saveFrameToPng", time: alinhado };
     }
+
+    if (motivo === null) {
+      motivo = conferencia.exists
+        ? "gravou um arquivo de zero byte"
+        : "retornou sem erro e não gravou arquivo";
+    }
   }
 
-  return { file: vecSaveFrameViaQueue(comp, alinhado, destino), method: "renderQueue", time: alinhado };
+  if (metodo === "direct") {
+    throw new Error(
+      "saveFrameToPng não entregou o arquivo: " + motivo +
+        ". Foi pedido method \"direct\", então não caí para a fila de render."
+    );
+  }
+
+  return {
+    file: vecSaveFrameViaQueue(comp, alinhado, destino),
+    method: "renderQueue",
+    time: alinhado,
+    // Quem recebe isto fica sabendo por que o caminho rápido não foi usado. Sem essa
+    // linha, "via renderQueue" parece escolha nossa em vez de consequência de uma falha.
+    fallbackReason: motivo,
+  };
 }
 
 // ── ae-anim.jsx ──
@@ -2739,11 +2779,12 @@ vec.tools.save_frame = function (args) {
     ? new File(args.path)
     : new File(pasta.fsName + "/frame-" + new Date().getTime() + ".png");
 
-  var saida = vec.saveFrame(comp, time, destino);
+  var saida = vec.saveFrame(comp, time, destino, args.method);
 
   return {
     path: saida.file.fsName,
     method: saida.method,
+    fallbackReason: saida.fallbackReason || null,
     time: round3(saida.time),
     comp: comp.name,
     width: comp.width,
@@ -3064,7 +3105,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 10;
+var VEC_PANEL_BUILD = 11;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
