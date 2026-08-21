@@ -178,9 +178,14 @@ test("compare_images aponta onde a diferença se concentra", async () => {
 
   const texto = r.content.find((c) => c.type === "text").text;
 
-  assert.match(texto, /% dos pixels diferem/);
+  assert.match(texto, /Estrutura: /);
+  assert.match(texto, /Área: /);
   assert.match(texto, /Onde a diferença se concentra/);
   assert.match(texto, /em 0,0/);
+
+  // A leitura vem junto do número: sem ela, área alta parece o problema principal —
+  // que foi exatamente a conclusão errada tirada de uma comparação real.
+  assert.match(texto, /ESTRUTURA ALTA|DESENHO bate|reconstrução bate/);
   assert.ok(fs.existsSync(path.join(dir, "diff.png")), "gravou a imagem de diferença");
 });
 
@@ -293,4 +298,51 @@ test("check_bridge devolve o diagnóstico quando a ponte não responde", async (
 
   assert.equal(r.isError, true);
   assert.match(r.content[0].text, /DIAGNÓSTICO/);
+});
+
+test("crop_image sem retângulo isola pela semente e não corta a ilustração", () => {
+  // ── Por que o retângulo virou opcional ───────────────────────────────────────
+  // Medir o retângulo de uma ilustração olhando um frame é chute com régua, e errar para
+  // dentro corta o desenho — foi o defeito que mais voltou, inclusive num braço robótico
+  // cortado na parte de baixo. Com isolate, errar para FORA deixou de custar: o vizinho é
+  // descartado por conectividade. Então a imagem inteira pode entrar, e a própria
+  // ilustração define os limites.
+  return conectar().then(async ({ client }) => {
+    const dir = tempDir();
+
+    // Ilustração à esquerda, vizinho da mesma cor à direita, os dois longe da borda.
+    const origem = gravarPng(path.join(dir, "cena.png"), 80, 40, (x, y) => {
+      const faixa = y >= 10 && y <= 30;
+      if (faixa && x >= 6 && x <= 24) return [20, 20, 30];
+      if (faixa && x >= 55 && x <= 72) return [20, 20, 30];
+      return [247, 245, 240];
+    });
+
+    const r = await client.callTool({
+      name: "crop_image",
+      arguments: { path: origem, removeBackground: true, trim: true, isolate: { x: 15, y: 20 } },
+    });
+
+    assert.equal(r.isError, undefined, JSON.stringify(r.content));
+    const texto = r.content.find((c) => c.type === "text").text;
+
+    // As coordenadas devolvidas são as da ilustração, não de um retângulo pedido.
+    assert.match(texto, /"x": 6/);
+    assert.match(texto, /"w": 19/);
+
+    // E nada encostando na borda: sem retângulo, não há como cortar.
+    assert.doesNotMatch(texto, /ATENÇÃO: sobrou desenho/);
+  });
+});
+
+test("sem retângulo e sem semente, a ferramenta recusa e explica o caminho bom", () => {
+  return conectar().then(async ({ client }) => {
+    const dir = tempDir();
+    const origem = gravarPng(path.join(dir, "x.png"), 20, 20, () => [247, 245, 240]);
+
+    const r = await client.callTool({ name: "crop_image", arguments: { path: origem } });
+
+    assert.equal(r.isError, true);
+    assert.match(r.content[0].text, /caminho preferido/);
+  });
 });

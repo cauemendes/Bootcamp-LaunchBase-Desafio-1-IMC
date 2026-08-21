@@ -29,6 +29,47 @@ export class CompareError extends Error {
 /** Diferença de cor abaixo disto é compressão e suavização, não erro de reconstrução. */
 export const DEFAULT_COMPARE_TOLERANCE = 12;
 
+/** Contraste local acima disto conta como borda. Abaixo é textura e ruído. */
+const LIMITE_BORDA = 40;
+
+/**
+ * Mapa de bordas: onde a imagem muda de tom depressa.
+ *
+ * ── Por que isto existe, além da diferença de pixel ───────────────────────────
+ * Porcentagem de pixels diferentes pesa ÁREA. Um tom levemente errado num preenchimento
+ * grande domina o número; um "0" faltando dentro de um selo, um ícone trocado, um símbolo
+ * com proporção errada quase não contam.
+ *
+ * Foi o que aconteceu numa comparação real de quatro cenas: a que o designer considerou
+ * boa marcou 21% — texto duplicado quase alinhado, muitos pixels — e a que ele considerou
+ * horrível marcou 13%, porque os defeitos dela eram um ícone errado e um número faltando.
+ * A ordem do número era o inverso da ordem da qualidade.
+ *
+ * Borda é o que separa "o tom está um pouco diferente" de "o desenho está diferente".
+ * Preenchimento chapado não tem borda; contorno, texto e ícone são feitos dela.
+ */
+function mapaDeBordas(img) {
+  const { width, height, data } = img;
+  const bordas = new Uint8Array(width * height);
+
+  const luz = (p) => {
+    const i = p * 4;
+    // Luminância aproximada, com o verde pesando mais — o mesmo critério de colorDistance.
+    return (data[i] * 2 + data[i + 1] * 5 + data[i + 2]) / 8;
+  };
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const p = y * width + x;
+      const dx = Math.abs(luz(p - 1) - luz(p + 1));
+      const dy = Math.abs(luz(p - width) - luz(p + width));
+      if (dx + dy >= LIMITE_BORDA) bordas[p] = 1;
+    }
+  }
+
+  return bordas;
+}
+
 const DEFAULT_GRID = 6;
 
 /**
@@ -102,10 +143,30 @@ export function compareImages(a, b, opts = {}) {
 
   const worst = blocks.reduce((melhor, bloco) => (bloco.ratio > melhor.ratio ? bloco : melhor), blocks[0]);
 
+  // ── A segunda medida: estrutura ─────────────────────────────────────────────
+  // Compara os mapas de borda. Uma borda que existe numa imagem e não na outra é traço,
+  // texto ou ícone que mudou — não tom que escorregou. É esta que acompanha a percepção
+  // de "está errado", e por isso vem junto do número de área em vez de substituí-lo:
+  // as duas respondem perguntas diferentes.
+  const bordasA = mapaDeBordas(a);
+  const bordasB = mapaDeBordas(b);
+
+  let bordas = 0;
+  let bordasDiferentes = 0;
+
+  for (let p = 0; p < width * height; p++) {
+    if (!bordasA[p] && !bordasB[p]) continue;
+    bordas++;
+    if (bordasA[p] !== bordasB[p]) bordasDiferentes++;
+  }
+
   return {
     differing,
     total: width * height,
     ratio: differing / (width * height),
+    edges: bordas,
+    edgesDiffering: bordasDiferentes,
+    edgeRatio: bordas ? bordasDiferentes / bordas : 0,
     blocks,
     worst,
     map: mapa,

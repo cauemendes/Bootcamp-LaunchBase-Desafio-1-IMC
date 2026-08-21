@@ -158,8 +158,14 @@ corpo, que é mais solto que a maioria dos designs.
 pequeno, ilustração deslocada em vinte pixels, texto que saiu regular em vez de bold — nada
 disso salta olhando as duas imagens, e é tudo o que costuma sair errado.
 
-Leia a concentração, não o total. Dois por cento concentrados num logo é erro grave; quinze
-por cento espalhados podem ser só suavização. Vá primeiro na região de maior concentração.
+Leia a **estrutura** antes da área. Estrutura é a proporção de bordas que não batem, e
+borda é do que traço, texto e ícone são feitos — preenchimento chapado não tem nenhuma.
+Área pesa tamanho, então um tom levemente errado num fundo grande domina o número enquanto
+um número faltando dentro de um selo quase não aparece.
+
+Estrutura alta é desenho errado, e é o que precisa de conserto. Área alta com estrutura
+baixa é cor ou tom: confira paleta e opacidade antes de mexer em geometria. E vá primeiro
+na região de maior concentração — nenhuma das duas medidas é nota, as duas são localizador.
 
 **Faltou algo nas ferramentas? Relate, não implemente.** Você está usando o Vectorize AE,
 não desenvolvendo. Editar o código dele daqui chega sem teste, trava a próxima atualização
@@ -209,11 +215,17 @@ E ilustração que aparece em mais de uma cena é **um arquivo só**: recorte um
 reaproveite, mudando só posição e escala. Recortar de novo em cada cena dá arquivos
 ligeiramente diferentes do mesmo desenho, e a diferença aparece no vídeo montado.
 
-**Meça a região com folga.** Folga se tira depois com \`trim: true\`, que aperta o recorte
-na ilustração e devolve as coordenadas certas. Corte não se recupera: se o recorte cortar
-o desenho, o arquivo abre normal, com a ilustração dentro e o fundo limpo, e só de perto
-se vê que falta um pedaço — quando a cena já está montada. A ferramenta avisa se sobrou
-desenho encostando na borda, e esse aviso quer dizer "refaça com mais folga".
+**Não meça retângulo. Aponte um ponto dentro da ilustração.** Passe só \`isolate\`,
+\`removeBackground: true\` e \`trim: true\`, sem x/y/width/height. A ferramenta trabalha na
+imagem inteira, mantém o que está ligado ao seu ponto e aperta no resultado — a ilustração
+define os próprios limites, e não há como cortá-la.
+
+Medir retângulo a olho num frame é chute com régua, e errar para dentro corta o desenho.
+Era o defeito que mais voltava, inclusive num braço robótico que saiu sem a parte de baixo.
+
+Se você passar retângulo mesmo assim, meça com folga: folga se tira com \`trim\`, corte não
+se recupera. A ferramenta avisa quando sobrou desenho encostando na borda, e esse aviso
+quer dizer "refaça com mais folga" — ou melhor, refaça sem retângulo.
 
 A ferramenta diz quanto do recorte virou transparente. Perto de 100% significa que a
 ilustração foi removida junto; perto de 0%, que o fundo não era chapado. Nos dois casos,

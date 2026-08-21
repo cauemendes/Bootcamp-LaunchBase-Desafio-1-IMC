@@ -429,10 +429,21 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         "Olhar as duas imagens responde bem \"está parecido?\" e mal \"o que falta?\". Cor " +
         "errada num elemento pequeno, ilustração deslocada, texto que saiu regular em vez " +
         "de bold — nada disso salta na tela, e é tudo o que costuma sair errado.\n\n" +
-        "Devolve a proporção de pixels diferentes, um mapa por região dizendo onde a " +
-        "diferença se concentra, e opcionalmente uma imagem com o que difere marcado em " +
-        "vermelho. Não confunda proporção baixa com acerto: 2% concentrados num rosto ou " +
-        "num logo é erro grave, e 15% espalhados podem ser só suavização.",
+        "Devolve DUAS medidas, e a segunda é a que importa mais:\n\n" +
+        "• ÁREA — proporção de pixels diferentes. Pesa tamanho: um tom levemente errado " +
+        "num preenchimento grande domina este número.\n" +
+        "• ESTRUTURA — proporção de bordas que não batem. Contorno, texto e ícone são " +
+        "feitos de borda; preenchimento chapado não tem nenhuma. É esta que acompanha o " +
+        "que uma pessoa chama de \"está errado\".\n\n" +
+        "Aconteceu numa comparação real: a cena que o designer considerou boa marcou 21% " +
+        "de área (texto duplicado quase alinhado, muitos pixels) e a que ele considerou " +
+        "horrível marcou 13%, porque os defeitos dela eram um ícone trocado e um número " +
+        "faltando. A ordem da área era o inverso da ordem da qualidade.\n\n" +
+        "NENHUM dos dois é nota. Os dois localizam. Área alta com estrutura baixa é cor " +
+        "ou tom; estrutura alta com área baixa é desenho errado — e essa é a que precisa " +
+        "de conserto.\n\n" +
+        "Também devolve um mapa por região dizendo onde a diferença se concentra, e " +
+        "opcionalmente uma imagem com o que difere marcado em vermelho.",
       inputSchema: {
         reference: z.string().describe("PNG da referência original."),
         result: z.string().describe("PNG do resultado — normalmente o que save_frame gravou."),
@@ -496,9 +507,26 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         }
       }
 
+      // Estrutura primeiro: é a que corresponde ao julgamento de quem olha. Área
+      // primeiro faria a leitura errada parecer a principal, que foi o que aconteceu.
+      const estrutura = r.edgeRatio * 100;
+      const area = r.ratio * 100;
+
+      const leitura =
+        estrutura >= 8
+          ? "ESTRUTURA ALTA: traço, texto ou ícone estão diferentes. É o tipo de erro que " +
+            "uma pessoa nota, e o que precisa de conserto."
+          : area >= 10
+            ? "Estrutura baixa com área alta: o DESENHO bate e a COR ou o TOM não. Confira " +
+              "paleta e opacidade antes de mexer em geometria."
+            : "As duas medidas baixas — a reconstrução bate com a referência.";
+
       return asText(
-        `${(r.ratio * 100).toFixed(1)}% dos pixels diferem ` +
+        `Estrutura: ${estrutura.toFixed(1)}% das bordas não batem ` +
+          `(${r.edgesDiffering} de ${r.edges}).\n` +
+          `Área: ${area.toFixed(1)}% dos pixels diferem ` +
           `(${r.differing} de ${r.total}), tolerância ${tolerance ?? 12}.\n\n` +
+          `${leitura}\n\n` +
           (suspeitos.length
             ? `Onde a diferença se concentra:\n${suspeitos.join("\n")}\n\n` +
               "Vá para a região de maior concentração primeiro: é lá que está o elemento " +
@@ -525,13 +553,25 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         "parece tentativa.\n\n" +
         "O caminho devolvido vai direto em `source` de uma forma `image`. Assim a " +
         "ilustração fica com os pixels originais e o resto da cena continua vetor " +
-        "editável, que é o que se anima.",
+        "editável, que é o que se anima.\n\n" +
+        "MODO PREFERIDO: passe apenas `isolate` com um ponto dentro da ilustração, " +
+        "`removeBackground: true` e `trim: true`, sem x/y/width/height. A ferramenta " +
+        "trabalha na imagem inteira, mantém só o que está ligado ao seu ponto, e aperta " +
+        "no resultado. Assim a própria ilustração define os limites e não há como " +
+        "cortá-la — que é o erro que mais aparece quando o retângulo é medido a olho.",
       inputSchema: {
         path: z.string().describe("PNG de origem — o frame de referência."),
-        x: z.number().describe("Canto superior esquerdo da região, em pixels da imagem."),
-        y: z.number(),
-        width: z.number(),
-        height: z.number(),
+        x: z
+          .number()
+          .optional()
+          .describe(
+            "Canto superior esquerdo da região. OPCIONAL quando você passa `isolate`: sem " +
+              "retângulo a ferramenta trabalha na imagem inteira e a própria ilustração " +
+              "define os limites, o que elimina a chance de cortá-la."
+          ),
+        y: z.number().optional(),
+        width: z.number().optional(),
+        height: z.number().optional(),
         out: z
           .string()
           .optional()
@@ -599,11 +639,35 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         return asError(`Não consegui ler ${origem}: ${err.message}`);
       }
 
+      // ── Sem retângulo, quando há semente ────────────────────────────────────
+      // Medir o retângulo de uma ilustração olhando um frame é chute com régua, e errar
+      // para dentro corta o desenho — foi o defeito que mais voltou. Com `isolate`, errar
+      // para FORA deixou de custar: o vizinho é descartado por conectividade, não por
+      // estar fora de um retângulo. Então o retângulo deixou de ser necessário: a imagem
+      // inteira entra, a ilustração define os próprios limites, e não há como cortá-la.
+      const semRetangulo =
+        x == null && y == null && width == null && height == null && Boolean(isolate);
+
       let recorte;
       try {
-        recorte = cropImage(img, { x, y, width, height });
+        recorte = semRetangulo
+          ? { ...img, x: 0, y: 0 }
+          : cropImage(img, {
+              x: x ?? 0,
+              y: y ?? 0,
+              width: width ?? img.width,
+              height: height ?? img.height,
+            });
       } catch (err) {
         return asError(err.message);
+      }
+
+      if (!semRetangulo && !isolate && (x == null || y == null || width == null || height == null)) {
+        return asError(
+          "Sem `isolate`, o recorte precisa de x, y, width e height. Com `isolate`, os " +
+            "quatro podem ser omitidos e a ilustração define os próprios limites — é o " +
+            "caminho preferido, porque não há como cortar o desenho."
+        );
       }
 
       let recorteFinal = recorte;

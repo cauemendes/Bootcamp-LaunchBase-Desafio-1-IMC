@@ -114,3 +114,39 @@ test("grade mais fina localiza melhor, sem mudar o total", () => {
   assert.equal(grosso.differing, fino.differing);
   assert.ok(fino.worst.ratio > grosso.worst.ratio, "a grade fina isola melhor a região");
 });
+
+test("tom errado em área grande: muita área, nenhuma estrutura", () => {
+  // ── A inversão que motivou a segunda medida ──────────────────────────────────
+  // Numa comparação real de quatro cenas, a que o designer considerou boa marcou 21% de
+  // área e a que ele considerou horrível marcou 13%. A ordem do número era o inverso da
+  // ordem da qualidade, porque área pesa tamanho e os defeitos graves eram pequenos.
+  const ref = imagem(100, 100, (x, y) => (y < 50 ? [80, 80, 200] : CLARO));
+  const tomErrado = imagem(100, 100, (x, y) => (y < 50 ? [110, 110, 215] : CLARO));
+
+  const r = compareImages(ref, tomErrado);
+
+  assert.ok(r.ratio > 0.4, "metade da imagem tem o tom trocado");
+  assert.equal(r.edgeRatio, 0, "o desenho é o mesmo: nenhuma borda mudou");
+});
+
+test("detalhe pequeno faltando: pouca área, muita estrutura", () => {
+  // Um número que falta dentro de um selo, um ícone trocado. Poucos pixels, e é o erro
+  // que uma pessoa nota primeiro.
+  const dentro = (x, y) => x > 70 && x < 80 && y > 70 && y < 80;
+
+  const ref = imagem(100, 100, (x, y) => (dentro(x, y) ? ESCURO : CLARO));
+  const semDetalhe = imagem(100, 100, () => CLARO);
+
+  const r = compareImages(ref, semDetalhe);
+
+  assert.ok(r.ratio < 0.02, "quase nada da área mudou");
+  assert.ok(r.edgeRatio > 0.2, "mas as bordas daquele detalhe sumiram");
+});
+
+test("as duas medidas em zero quando as imagens são iguais", () => {
+  const a = imagem(40, 40, (x, y) => (x < 20 ? ESCURO : CLARO));
+
+  const r = compareImages(a, imagem(40, 40, (x, y) => (x < 20 ? ESCURO : CLARO)));
+  assert.equal(r.ratio, 0);
+  assert.equal(r.edgeRatio, 0);
+});
