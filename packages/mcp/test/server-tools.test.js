@@ -346,3 +346,137 @@ test("sem retângulo e sem semente, a ferramenta recusa e explica o caminho bom"
     assert.match(r.content[0].text, /caminho preferido/);
   });
 });
+
+// ── Arrumação de projeto ──────────────────────────────────────────────────────
+// Renomear em lote e mudar duração são as tarefas em que o assistente é mais confiável, e
+// por isso mesmo as que ninguém confere. Os testes abaixo travam o que faz a resposta ser
+// conferível: a lista de antes → depois, e o aviso de camada fora do intervalo.
+
+test("rename_items mostra o antes e o depois de cada item", async () => {
+  const { client, chamadas } = await conectar({
+    rename_items: (args) => ({
+      count: args.items.length + args.layers.length,
+      renamed: [
+        { kind: "item", id: 12, from: "Comp 1", to: "SC01" },
+        { kind: "layer", comp: "SC01", index: 3, from: "Shape Layer 1", to: "bg" },
+      ],
+      warnings: [],
+    }),
+  });
+
+  const r = await client.callTool({
+    name: "rename_items",
+    arguments: {
+      items: [{ id: 12, name: "SC01" }],
+      layers: [{ compName: "SC01", layerIndex: 3, name: "bg" }],
+    },
+  });
+
+  assert.equal(r.isError, undefined, JSON.stringify(r.content));
+  const texto = r.content[0].text;
+
+  // A lista é o ponto: "renomeei 2 itens" não deixa ninguém conferir.
+  assert.match(texto, /“Comp 1” → “SC01”/);
+  assert.match(texto, /SC01 · camada 3: “Shape Layer 1” → “bg”/);
+
+  // E os ids chegam intactos na ponte — agir por nome renomearia a comp errada.
+  assert.deepEqual(chamadas[0].args.items, [{ id: 12, name: "SC01" }]);
+});
+
+test("rename_items recusa lote vazio sem incomodar o After Effects", async () => {
+  const { client, chamadas } = await conectar({});
+  const r = await client.callTool({ name: "rename_items", arguments: {} });
+
+  assert.equal(r.isError, true);
+  assert.match(r.content[0].text, /describe_project/);
+  assert.equal(chamadas.length, 0);
+});
+
+test("set_comp_settings avisa quando encurtar a duração esconde camadas", async () => {
+  // Encurtar não apaga nada, e é aí que mora o susto: as camadas continuam lá, fora do
+  // intervalo visível, e a comp parece ter perdido conteúdo sem nenhum aviso do AE.
+  const { client } = await conectar({
+    set_comp_settings: () => ({
+      comp: "SC01",
+      id: 12,
+      changed: ["duration"],
+      before: { name: "SC01", duration: 10, frameRate: 25, width: 1920, height: 1080 },
+      after: { name: "SC01", duration: 4, frameRate: 25, width: 1920, height: 1080 },
+      layersOutOfRange: 2,
+    }),
+  });
+
+  const r = await client.callTool({
+    name: "set_comp_settings",
+    arguments: { id: 12, durationSeconds: 4 },
+  });
+
+  assert.equal(r.isError, undefined, JSON.stringify(r.content));
+  const texto = r.content[0].text;
+
+  assert.match(texto, /"duration": 10/);
+  assert.match(texto, /"duration": 4/);
+  assert.match(texto, /2 camada\(s\) começam depois do fim da comp/);
+});
+
+test("set_comp_settings sem camadas escondidas não inventa aviso", async () => {
+  const { client } = await conectar({
+    set_comp_settings: () => ({
+      comp: "SC01",
+      id: 12,
+      changed: ["name"],
+      before: { name: "Comp 1", duration: 4, frameRate: 25, width: 1920, height: 1080 },
+      after: { name: "SC01", duration: 4, frameRate: 25, width: 1920, height: 1080 },
+      layersOutOfRange: 0,
+    }),
+  });
+
+  const r = await client.callTool({
+    name: "set_comp_settings",
+    arguments: { compName: "Comp 1", name: "SC01" },
+  });
+
+  assert.equal(r.isError, undefined, JSON.stringify(r.content));
+  assert.doesNotMatch(r.content[0].text, /camadasForaDoIntervalo/);
+});
+
+test("move_to_folder diz de onde cada item saiu e se a pasta nasceu agora", async () => {
+  const { client } = await conectar({
+    move_to_folder: (args) => ({
+      folder: args.folderName,
+      folderId: 99,
+      created: true,
+      moved: [
+        { id: 12, name: "SC01", from: null },
+        { id: 13, name: "SC02", from: "old" },
+      ],
+      count: 2,
+      warnings: [],
+    }),
+  });
+
+  const r = await client.callTool({
+    name: "move_to_folder",
+    arguments: { folderName: "scenes", itemIds: [12, 13] },
+  });
+
+  assert.equal(r.isError, undefined, JSON.stringify(r.content));
+  const texto = r.content[0].text;
+
+  assert.match(texto, /SC01 \(de raiz do projeto\)/);
+  assert.match(texto, /SC02 \(de old\)/);
+
+  // "A pasta foi criada agora" é o que explica um destino com erro de digitação.
+  assert.match(texto, /"pastaCriadaAgora": true/);
+});
+
+test("move_to_folder sem ids recusa antes de criar pasta nenhuma", async () => {
+  const { client, chamadas } = await conectar({});
+  const r = await client.callTool({
+    name: "move_to_folder",
+    arguments: { folderName: "scenes", itemIds: [] },
+  });
+
+  assert.equal(r.isError, true);
+  assert.equal(chamadas.length, 0);
+});

@@ -121,6 +121,8 @@ e a lista de comps, está tudo ligado.
 | `describe_layer` | Detalha uma camada: transform, keyframes, efeitos, shapes, texto |
 | `list_fonts` | Fontes instaladas nesta máquina |
 | `save_frame` | Renderiza um frame **e devolve a imagem**, para o Claude ver o resultado |
+| `compare_images` | Compara referência e reconstrução, por área e por estrutura |
+| `crop_image` | Recorta da referência o que não dá para vetorizar, e remove o fundo |
 | `measure_image` | Mede cor, forma e raio de canto nos pixels de um PNG |
 | `describe_brand` | Cores e fontes da marca em uso |
 | `set_brand` | Registra a identidade do cliente, ou troca de perfil |
@@ -129,6 +131,9 @@ e a lista de comps, está tudo ligado.
 | `describe_animation_format` | Explica o formato do AnimSpec |
 | `animate_layers` | Anima camadas com keyframes editáveis |
 | `build_master_comp` | Sequencia as cenas numa comp master, com áudio e marcadores |
+| `rename_items` | Renomeia comps, pastas, footage e camadas em lote |
+| `set_comp_settings` | Nome, duração, frame rate e tamanho de uma comp |
+| `move_to_folder` | Move itens para uma pasta do projeto, criando-a se preciso |
 | `save_project` | Grava o .aep — nada do que foi criado está em disco antes disso |
 | `execute_script` | ExtendScript arbitrário — o escape hatch |
 
@@ -157,11 +162,31 @@ as cores vêm da imagem e o texto sai em Arial.
 
 ### Sobre o tamanho do conjunto
 
-São dezesseis, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+São vinte e uma, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
 formatação própria, ou algo que o modelo erra fazendo à mão.
+
+### Arrumação de projeto age por `id`
+
+Renomear em lote, mudar a duração de uma comp, mover para pasta: é o trabalho em que o
+assistente é mais confiável — nada de medir imagem, nada de julgar design. Só por isso
+existem ferramentas dedicadas em vez de `execute_script`: script escrito na hora erra de
+um jeito novo a cada vez, e o erro aqui é do tipo que só aparece depois de salvar.
+
+As três agem por `id`, que vem de `describe_project`. Nome não é único no After Effects:
+num projeto com "SC01" e "SC01 old", agir por nome é sorteio. E `describe_project` traz
+`folder` e `selected` em cada item, então "renomeie as comps desta pasta" e "as que eu
+selecionei" se resolvem filtrando a lista, não escrevendo script no escuro.
+
+Cada operação devolve o valor anterior. Um Cmd+Z desfaz o lote inteiro, mas quem pediu
+precisa da lista para conferir — num lote de 54 renomeações, "renomeei 54 itens" não é
+resposta.
+
+Encurtar a duração de uma comp merece nota: o After Effects não apaga camada nenhuma,
+deixa as que sobraram fora do intervalo visível. Na tela isso parece conteúdo perdido, e
+nada avisa. Por isso `set_comp_settings` conta quantas camadas ficaram fora.
 
 ### `save_frame` é o que fecha o laço
 

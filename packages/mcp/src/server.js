@@ -11,7 +11,7 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Dezesseis ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Vinte e uma ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
@@ -1385,6 +1385,168 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         proximoPasso:
           "Abra a master e ouça. As durações estimadas põem as cenas perto do lugar " +
           "certo, não no lugar exato — o ajuste fino é ouvindo.",
+      });
+    }
+  );
+
+  // ---------------------------------------------------------------- arrumação
+
+  /**
+   * ── Por que estas três não são `execute_script` ─────────────────────────────
+   * Renomear em lote, mudar duração, mover para pasta: mecânico, sem julgamento, e o
+   * modelo acerta. Mas script escrito na hora erra de um jeito novo a cada vez, e o erro
+   * aqui é do tipo que só aparece depois de salvar — a comp errada renomeada no meio de
+   * 54. Ferramenta dedicada tem esquema, valida antes, e devolve o antes de cada item.
+   *
+   * Todas agem por `id`, que vem de `describe_project`. Nome não é único no After
+   * Effects: com "SC01" e "SC01 old" no projeto, agir por nome é sorteio.
+   */
+
+  server.registerTool(
+    "rename_items",
+    {
+      title: "Renomear comps, pastas, footage e camadas",
+      description:
+        "Renomeia itens do projeto (composições, pastas, arquivos importados) e camadas " +
+        "dentro de uma composição, em lote.\n\n" +
+        "Os `id` vêm de `describe_project` — chame antes. Aja sempre por `id`, nunca " +
+        "montando o pedido a partir do nome: num projeto com \"SC01\" e \"SC01 old\", agir " +
+        "por nome renomeia a errada, e quem pediu descobre folheando o projeto.\n\n" +
+        "Pedidos como \"as comps desta pasta\" ou \"as que eu selecionei\" se resolvem " +
+        "filtrando o `folder` e o `selected` que `describe_project` devolve. Se o pedido " +
+        "era sobre a seleção e `selectedCount` vier zero, a seleção se perdeu — pergunte, " +
+        "não renomeie o projeto inteiro.\n\n" +
+        "Um item que falha não impede os outros: a resposta traz o que mudou e um aviso " +
+        "para cada falha. Um Cmd+Z desfaz o lote inteiro.",
+      inputSchema: {
+        items: z
+          .array(
+            z.object({
+              id: z.number().int().describe("O `id` do item, como veio de describe_project."),
+              name: z.string().describe("Nome novo."),
+            })
+          )
+          .optional()
+          .describe("Itens do projeto: comps, pastas, footage."),
+        layers: z
+          .array(
+            z.object({
+              compName: z.string().describe("Composição onde a camada está."),
+              layerIndex: z
+                .number()
+                .int()
+                .describe("Índice da camada (1 = topo da timeline)."),
+              name: z.string().describe("Nome novo."),
+            })
+          )
+          .optional()
+          .describe("Camadas dentro de composições."),
+      },
+    },
+    async (args) => {
+      if (!args.items?.length && !args.layers?.length) {
+        return asError(
+          "Informe pelo menos um item em `items` ou `layers`. Os `id` vêm de describe_project."
+        );
+      }
+
+      const { result } = await call("rename_items", args);
+
+      return asText({
+        renomeados: result.count,
+        // Aspas tipográficas em vez de retas: a resposta é JSON, e aspa reta sai
+        // escapada com barra invertida no meio do nome — ilegível justamente na linha
+        // que a pessoa precisa ler para conferir.
+        mudancas: result.renamed.map((r) =>
+          r.kind === "layer"
+            ? `${r.comp} · camada ${r.index}: “${r.from}” → “${r.to}”`
+            : `“${r.from}” → “${r.to}”`
+        ),
+        avisos: result.warnings?.length ? result.warnings : undefined,
+        proximoPasso:
+          "Mostre a lista de mudanças ao usuário — “renomeei 54 itens” não deixa " +
+          "ninguém conferir. Os nomes só existem na memória do After Effects até " +
+          "save_project rodar.",
+      });
+    }
+  );
+
+  server.registerTool(
+    "set_comp_settings",
+    {
+      title: "Mudar as configurações de uma composição",
+      description:
+        "Muda nome, duração, frame rate ou tamanho de uma composição. Informe só o que " +
+        "quer mudar; o resto fica como está.\n\n" +
+        "Prefira o `id` (de `describe_project`) ao nome. A resposta traz o antes e o " +
+        "depois de todos os campos, para conferir.\n\n" +
+        "Encurtar a duração não apaga camada: o After Effects deixa as camadas onde " +
+        "estão e elas passam a existir fora do intervalo visível — a comp parece ter " +
+        "perdido conteúdo sem nenhum aviso. A resposta conta quantas camadas ficaram " +
+        "fora em `layersOutOfRange`; se vier maior que zero, diga isso ao usuário.",
+      inputSchema: {
+        id: z.number().int().optional().describe("O `id` da comp. Preferível ao nome."),
+        compName: z
+          .string()
+          .optional()
+          .describe("Nome da comp, se não tiver o id. Omitir os dois usa a comp ativa."),
+        name: z.string().optional().describe("Nome novo."),
+        durationSeconds: z.number().optional().describe("Duração nova, em segundos."),
+        frameRate: z.number().optional().describe("Frames por segundo."),
+        width: z.number().int().optional().describe("Largura em pixels."),
+        height: z.number().int().optional().describe("Altura em pixels."),
+      },
+    },
+    async (args) => {
+      const { result } = await call("set_comp_settings", args);
+
+      return asText({
+        comp: result.comp,
+        mudou: result.changed,
+        antes: result.before,
+        depois: result.after,
+        camadasForaDoIntervalo: result.layersOutOfRange || undefined,
+        aviso:
+          result.layersOutOfRange > 0
+            ? `${result.layersOutOfRange} camada(s) começam depois do fim da comp e ` +
+              "não aparecem mais. Nada foi apagado — avise o usuário, porque na tela " +
+              "isso parece conteúdo perdido."
+            : undefined,
+      });
+    }
+  );
+
+  server.registerTool(
+    "move_to_folder",
+    {
+      title: "Mover itens para uma pasta",
+      description:
+        "Move comps, pastas e arquivos importados para uma pasta do projeto, criando a " +
+        "pasta se ela não existir. Os `id` vêm de `describe_project`.\n\n" +
+        "A resposta diz de onde cada item saiu e se a pasta foi criada agora — útil " +
+        "quando o nome tem um erro de digitação e a pasta \"não existia\".",
+      inputSchema: {
+        folderName: z
+          .string()
+          .describe("Nome da pasta destino. Criada se não existir."),
+        itemIds: z
+          .array(z.number().int())
+          .describe("Os `id` dos itens a mover, como vieram de describe_project."),
+      },
+    },
+    async (args) => {
+      if (!args.itemIds?.length) {
+        return asError("Informe os `itemIds`. Eles vêm de describe_project.");
+      }
+
+      const { result } = await call("move_to_folder", args);
+
+      return asText({
+        pasta: result.folder,
+        pastaCriadaAgora: result.created || undefined,
+        movidos: result.count,
+        itens: result.moved.map((m) => `${m.name} (de ${m.from ?? "raiz do projeto"})`),
+        avisos: result.warnings?.length ? result.warnings : undefined,
       });
     }
   );

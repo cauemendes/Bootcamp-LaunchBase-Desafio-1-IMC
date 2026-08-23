@@ -24,6 +24,7 @@
 //@include "ae-anim.jsx"
 //@include "ae-image.jsx"
 //@include "ae-sequence.jsx"
+//@include "ae-organize.jsx"
 //@include "build-scene.jsx"
 
 /*global app, File, Folder, CompItem*/
@@ -196,6 +197,27 @@ vec.tools.animate = function (args) {
     throw new Error("animate precisa de `tracks` — trilhas já resolvidas pelo core.");
   }
   return vec.applyAnimation(args.tracks, args.options || {});
+};
+
+// ---------------------------------------------------------------- arrumação
+
+/**
+ * As três abaixo mexem no projeto sem julgar nada: renomear, mudar propriedade de comp,
+ * mover para pasta. São as tarefas em que o assistente é mais confiável, e justamente por
+ * isso não deveriam passar por `execute_script` — script escrito na hora erra de um jeito
+ * novo a cada vez, e renomear em lote é o tipo de erro que só aparece depois de salvar.
+ */
+
+vec.tools.rename_items = function (args) {
+  return vec.renameItems(args || {});
+};
+
+vec.tools.set_comp_settings = function (args) {
+  return vec.setCompSettings(args || {});
+};
+
+vec.tools.move_to_folder = function (args) {
+  return vec.moveToFolder(args || {});
 };
 
 // ---------------------------------------------------------------- escape hatch
