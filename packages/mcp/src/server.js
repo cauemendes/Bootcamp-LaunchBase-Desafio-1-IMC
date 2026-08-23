@@ -142,7 +142,14 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         "Lista as composições do projeto aberto e os arquivos importados, com o caminho " +
         "de cada um em disco. Comece por aqui quando não souber o que existe no projeto — " +
         "é também como se acha o caminho de uma imagem de referência para `measure_image`, " +
-        "que lê o arquivo direto e não depende do After Effects.",
+        "que lê o arquivo direto e não depende do After Effects.\n\n" +
+        "Cada item traz `folder` (a pasta em que está, ou null se estiver na raiz), `id` e " +
+        "`selected`. Use isto para atender pedidos como \"renomeie as comps desta pasta\" " +
+        "ou \"as que eu selecionei\", em vez de descobrir a estrutura escrevendo script no " +
+        "escuro. E aja sempre pelo `id`, não pelo nome: num projeto com nomes parecidos, " +
+        "agir por nome renomeia a comp errada.\n\n" +
+        "`selectedCount` em zero num pedido sobre seleção quer dizer que a seleção se " +
+        "perdeu — pergunte, em vez de agir sobre o projeto inteiro.",
       inputSchema: {},
     },
     async () => asText((await call("describe_project", {})).result)

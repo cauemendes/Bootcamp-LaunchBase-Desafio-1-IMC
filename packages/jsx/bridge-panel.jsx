@@ -89,7 +89,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 11;
+var VEC_PANEL_BUILD = 12;
 
 var VEC_BRIDGE_SCHEMA = 3;
 

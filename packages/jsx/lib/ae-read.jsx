@@ -28,10 +28,35 @@ vec.describeProject = function () {
 
   var comps = [];
   var footage = [];
-  var folders = 0;
+  var folders = [];
+
+  // ── Pasta e seleção precisam aparecer ────────────────────────────────────────
+  // "Renomeie as comps que estão nesta pasta" e "as que eu selecionei" são pedidos
+  // normais, e sem estes dois campos quem for atender tem de descobrir a estrutura
+  // escrevendo script no chute — arriscando renomear a comp errada num projeto com nomes
+  // parecidos. A informação existe no DOM e custa uma linha cada.
+  var selecionados = {};
+  try {
+    var sel = proj.selection;
+    for (var s = 0; s < sel.length; s++) selecionados["id" + sel[s].id] = true;
+  } catch (eSel) {
+    // Projeto sem seleção, ou API indisponível: `selected` sai false em tudo.
+  }
+
+  function nomeDaPasta(item) {
+    try {
+      // A raiz do projeto também é um FolderItem, e chamá-la de pasta confundiria quem
+      // for filtrar por pasta. null significa "está na raiz".
+      if (!item.parentFolder || item.parentFolder === proj.rootFolder) return null;
+      return item.parentFolder.name;
+    } catch (e) {
+      return null;
+    }
+  }
 
   for (var i = 1; i <= proj.numItems; i++) {
     var item = proj.item(i);
+    var estaSelecionado = selecionados["id" + item.id] === true;
 
     if (item instanceof CompItem) {
       comps.push({
@@ -42,9 +67,17 @@ vec.describeProject = function () {
         frameRate: item.frameRate,
         duration: round(item.duration, 3),
         layers: item.numLayers,
+        folder: nomeDaPasta(item),
+        selected: estaSelecionado,
       });
     } else if (item instanceof FolderItem) {
-      folders++;
+      folders.push({
+        name: item.name,
+        id: item.id,
+        items: item.numItems,
+        folder: nomeDaPasta(item),
+        selected: estaSelecionado,
+      });
     } else {
       // O caminho em disco é o que torna a imagem utilizável: medir e enxergar
       // acontecem fora do After Effects, lendo o arquivo. Sem isto, uma referência
@@ -59,6 +92,8 @@ vec.describeProject = function () {
         // ninguém precisar medir o arquivo por fora. Sem ela, `fitToAudio` exigia um
         // número que só existia na cabeça de quem tinha aberto o áudio em outro lugar.
         duration: round(item.duration, 3),
+        folder: nomeDaPasta(item),
+        selected: estaSelecionado,
         file: null,
       };
 
@@ -83,7 +118,16 @@ vec.describeProject = function () {
     comps: comps,
     footageCount: footage.length,
     footage: footage,
-    folderCount: folders,
+    folderCount: folders.length,
+    folders: folders,
+    // Quantos itens estão selecionados no painel de projeto. Zero com um pedido do tipo
+    // "as que eu selecionei" quer dizer que a seleção se perdeu — vale avisar em vez de
+    // agir sobre o projeto inteiro.
+    selectedCount: (function () {
+      var n = 0;
+      for (var k in selecionados) if (selecionados.hasOwnProperty(k)) n++;
+      return n;
+    })(),
     activeComp: active instanceof CompItem ? active.name : null,
     // Sem projeto salvo, qualquer caminho relativo que o modelo sugerir é chute.
     projectFolder: proj.file ? proj.file.parent.fsName : null,
