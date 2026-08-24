@@ -296,3 +296,106 @@ test("swing negativo recua em vez de avançar", () => {
   const { tracks } = um([{ layer: "Seletor", preset: "swing", degrees: -20 }]);
   assert.deepEqual(tracks[0].keys[1].value, [-20]);
 });
+
+// ---------------------------------------------------------------- entrada de texto
+
+test("revealIn mede a distância em altura de camada, não em pixel chutado", () => {
+  // O tamanho do texto só existe dentro do After Effects. Se o core cravasse um número
+  // aqui, texto grande nasceria meio visível dentro da janela — o defeito clássico
+  // deste rig, e o motivo de a unidade viajar junto com a trilha.
+  const { tracks } = um([{ layer: "Título", preset: "revealIn" }]);
+
+  assert.equal(tracks.length, 1, "sem fade por padrão: a máscara já resolve o aparecimento");
+  assert.equal(tracks[0].property, "textPosition");
+  assert.equal(tracks[0].mode, "offset");
+  assert.equal(tracks[0].unit, "layerHeight");
+  assert.deepEqual(tracks[0].keys[0].value, [0, 1], "uma altura inteira abaixo da janela");
+  assert.deepEqual(tracks[0].keys.at(-1).value, [0, 0]);
+});
+
+test("revealIn horizontal mede em largura, e vem do lado oposto ao movimento", () => {
+  const { tracks, setups } = um([{ layer: "Título", preset: "revealIn", direction: "left" }]);
+
+  assert.equal(tracks[0].unit, "layerWidth");
+  assert.deepEqual(tracks[0].keys[0].value, [1, 0], "anda para a esquerda, então começa à direita");
+  assert.equal(setups[0].from, "right");
+});
+
+test("revealIn pede a máscara antes de qualquer keyframe", () => {
+  // A máscara é medida com o texto parado. Criá-la depois mediria o texto já deslocado,
+  // e a janela sairia do tamanho errado sem nenhuma mensagem.
+  const { setups } = um([{ layer: "Título", preset: "revealIn" }]);
+
+  assert.equal(setups.length, 1);
+  assert.deepEqual(setups[0], { layer: "Título", kind: "revealMask", from: "bottom", padding: 2 });
+});
+
+test("revealIn com distance em pixels dispensa a medição", () => {
+  const { tracks } = um([{ layer: "Título", preset: "revealIn", distance: 60 }]);
+
+  assert.equal(tracks[0].unit, "px");
+  assert.deepEqual(tracks[0].keys[0].value, [0, 60]);
+});
+
+test("revealIn aceita fade por escolha, não por padrão", () => {
+  const { tracks } = um([{ layer: "Título", preset: "revealIn", withFade: true }]);
+
+  assert.equal(tracks.length, 2);
+  assert.equal(tracks[1].property, "opacity");
+});
+
+test("revealIn recusa direção inventada listando as que existem", () => {
+  const chamar = () => um([{ layer: "Título", preset: "revealIn", direction: "diagonal" }]);
+  assert.throws(chamar, /diagonal/);
+  assert.throws(chamar, /up/);
+});
+
+test("um preset sem setup não inventa montagem", () => {
+  const { setups } = um([{ layer: "a", preset: "fadeIn" }]);
+  assert.deepEqual(setups, []);
+});
+
+// ---------------------------------------------------------------- settle
+
+test("overshoot com settle dá a curva de mola: 0 → 110 → 90 → 100", () => {
+  // É a forma que a maioria das pessoas tem em mente quando pede "um pop".
+  const { tracks } = um([
+    { layer: "Selo", preset: "popIn", overshoot: 10, settle: 10, durationFrames: 10 },
+  ]);
+  const keys = tracks[0].keys;
+
+  assert.deepEqual(
+    keys.map((k) => [k.frame, k.value[0]]),
+    [
+      [0, 0],
+      [6, 110],
+      [8, 90],
+      [10, 100],
+    ]
+  );
+});
+
+test("sem settle o overshoot continua com um pico só, a 70% da duração", () => {
+  const { tracks } = um([{ layer: "Selo", preset: "popIn", overshoot: 10, durationFrames: 10 }]);
+
+  assert.deepEqual(
+    tracks[0].keys.map((k) => [k.frame, k.value[0]]),
+    [
+      [0, 0],
+      [7, 110],
+      [10, 100],
+    ]
+  );
+});
+
+test("settle sem overshoot avisa em vez de sumir em silêncio", () => {
+  const { tracks, warnings } = um([{ layer: "Selo", preset: "popIn", settle: 10 }]);
+
+  assert.equal(tracks[0].keys.length, 2, "sem overshoot não há de onde recuar");
+  assert.match(warnings.join("\n"), /settle sem overshoot/);
+});
+
+test("settle maior que o overshoot avisa que a entrada vai tremer", () => {
+  const { warnings } = um([{ layer: "Selo", preset: "popIn", overshoot: 5, settle: 20 }]);
+  assert.match(warnings.join("\n"), /recuar mais do que avançou/);
+});

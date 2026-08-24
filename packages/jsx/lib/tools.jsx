@@ -196,7 +196,7 @@ vec.tools.animate = function (args) {
   if (!args.tracks || !(args.tracks instanceof Array)) {
     throw new Error("animate precisa de `tracks` — trilhas já resolvidas pelo core.");
   }
-  return vec.applyAnimation(args.tracks, args.options || {});
+  return vec.applyAnimation(args.tracks, args.options || {}, args.setups || []);
 };
 
 // ---------------------------------------------------------------- arrumação

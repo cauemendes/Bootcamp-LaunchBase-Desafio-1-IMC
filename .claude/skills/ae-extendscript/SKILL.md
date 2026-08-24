@@ -210,6 +210,61 @@ dimensão** — posição 2D quer dois, 3D quer três. Errar isso lança.
 
 `setInterpolationTypeAtKey(index, KeyframeInterpolationType.BEZIER)` controla o tipo.
 
+## Máscara é aplicada antes do transform
+
+Esta é a ordem do pipeline de uma camada:
+
+```
+source → máscaras → efeitos → transform
+```
+
+A consequência derruba o rig de "texto aparecendo atrás de uma janela", que é a entrada
+de texto mais pedida em motion: **mascarar a camada e animar a posição dela move o
+recorte junto.** O texto desliza inteiro em vez de aparecer. Não há erro, não há aviso —
+só o resultado errado, e a impressão de que a máscara não foi criada.
+
+O que funciona é mexer no texto **por dentro da camada**, com um animator de texto. Ele
+age no estágio da fonte, antes da máscara: os glifos se movem, o recorte fica parado.
+
+```javascript
+var animadores = layer.property("ADBE Text Properties").property("ADBE Text Animators");
+var animador = animadores.addProperty("ADBE Text Animator");
+animador.name = "Reveal";
+
+// Sem seletor o animator não afeta caractere nenhum: ele nasce vazio, e a propriedade
+// recebe keyframe que não muda nada na tela.
+animador.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+
+var pos = animador
+  .property("ADBE Text Animator Properties")
+  .addProperty("ADBE Text Position 3D");   // três dimensões, mesmo em texto 2D
+```
+
+E a janela, no espaço da camada:
+
+```javascript
+var mascara = layer.property("ADBE Masks").addProperty("ADBE Mask Atom");
+var forma = new Shape();
+forma.vertices = [[esq, topo], [dir, topo], [dir, base], [esq, base]];
+forma.closed = true;
+mascara.property("ADBE Mask Shape").setValue(forma);
+mascara.maskMode = MaskMode.ADD;
+```
+
+Dois detalhes que só aparecem no resultado:
+
+- A distância de entrada tem que ser **o tamanho da camada**, medido com
+  `sourceRectAtTime`. Menos que isso e o texto já nasce meio visível dentro da janela.
+- Meça com o animator **zerado**. Sobra de uma execução anterior desloca os glifos, e a
+  altura medida sai errada.
+
+A máscara fica rente do lado de onde o texto vem — folga ali deixa o texto assomar antes
+da hora — e com folga nos outros três, senão raspa acento em cima e a perna do "g"
+embaixo.
+
+> **Não validado em After Effects real.** Os matchnames acima vieram da documentação.
+> Ao rodar pela primeira vez, confira e corrija aqui.
+
 ## Arquivos
 
 ```javascript

@@ -218,6 +218,13 @@ acima de 1s recebe aviso de que arrasta, abaixo de 3 frames de que o easing não
 ser percebido, overshoot acima de 20% de que virou cartoon. Aviso, não erro — a
 decisão continua sua.
 
+A entrada de texto que mais se usa em motion ganhou preset próprio: `revealIn` monta uma
+janela retangular parada e faz o texto passar por trás dela. Vale saber por que ele não é
+`slideIn` com uma máscara em cima — máscara é aplicada **antes** do transform, então
+mascarar a camada e animar a posição dela arrasta o recorte junto e o texto desliza
+inteiro. O rig certo mexe no texto por dentro, pelo animator; a máscara e o animator
+ficam nomeados na camada, editáveis à mão depois.
+
 E o stagger segue a **ordem da lista**, não o índice da camada na timeline. Escalonar
 por índice dá resultado aleatório e parece erro; a ordem de leitura do design é uma
 decisão de quem monta o spec.

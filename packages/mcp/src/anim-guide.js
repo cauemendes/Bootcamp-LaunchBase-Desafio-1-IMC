@@ -53,6 +53,7 @@ parece um corte. Fora da faixa você recebe aviso, não erro.
 | \`fadeIn\` / \`fadeOut\` | opacidade | — |
 | \`slideIn\` / \`slideOut\` | desliza, com fade junto | \`direction\`, \`distance\`, \`withFade\` |
 | \`popIn\` / \`popOut\` | escala | \`fromScale\` |
+| \`revealIn\` | texto aparece atrás de uma máscara, entrando | \`direction\`, \`distance\`, \`maskPadding\`, \`withFade\` |
 | \`rotateIn\` | gira até a rotação atual | \`degrees\` |
 | \`drawOn\` | contorno se desenhando (Trim Paths) | — |
 | \`dropIn\` | cai de cima, bate e quica | \`distance\`, \`bounce\` |
@@ -63,6 +64,28 @@ parece um corte. Fora da faixa você recebe aviso, não erro.
 \`"up"\` entra de baixo subindo.
 
 \`drawOn\` só funciona em shape layer, e o Trim Paths é criado se não existir.
+
+\`revealIn\` é a entrada de texto mais usada em motion: uma janela retangular parada e
+o texto passando por trás dela. **Só funciona em camada de texto** — e a razão importa,
+porque explica por que não dá para montar isso com \`slideIn\`:
+
+> Máscara é aplicada **antes** do transform da camada. Mascarar o texto e animar a
+> posição da camada move o recorte junto, e o texto desliza inteiro em vez de aparecer.
+> O que funciona é mexer no texto por dentro — a posição do **animator de texto**, que
+> age antes da máscara. É isso que \`revealIn\` monta: uma máscara chamada
+> "Vectorize Reveal" e um animator de mesmo nome, os dois editáveis à mão depois.
+
+Sem \`distance\`, a distância é **o próprio tamanho da camada** — o texto começa
+exatamente fora da janela. Menos que isso e ele já nasce meio visível, que é o defeito
+clássico deste rig. A máscara fica rente do lado de onde o texto vem e com folga nos
+outros três, para não raspar acento nem a perna do "g"; \`maskPadding\` (padrão 2px)
+ajusta essa folga.
+
+Sem fade por padrão: a máscara já resolve o aparecimento, e somar opacidade deixa o
+texto cinzento no meio do movimento em vez de nítido atrás da janela.
+
+Para shape e imagem não existe equivalente automático — use \`slideIn\`, ou monte a
+máscara à mão numa precomp.
 
 \`dropIn\` é para peso: o impacto acontece a 65% da duração e o resto é o quique,
 porque distribuir igualmente faz a queda parecer flutuante. A queda **acelera** — ease
@@ -105,6 +128,12 @@ de "animado bem". Faixa útil **5 a 15**; acima de 20 vira desenho animado e voc
 recebe aviso.
 
 Não se aplica a fade — opacidade acima de 100 não existe.
+
+\`settle\` é o recuo depois do overshoot: passa do alvo, volta um pouco para o outro
+lado, e só então assenta. Com \`overshoot: 10, settle: 10\` um \`popIn\` fica
+**0 → 110 → 90 → 100**, que é a curva de mola que a maioria das pessoas tem em mente
+quando pede "um pop". Sem overshoot o settle não faz nada — não há de onde recuar — e
+você recebe aviso.
 
 ## Antes de animar
 

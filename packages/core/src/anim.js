@@ -60,6 +60,7 @@ export const PRESETS = [
   "fadeIn", "fadeOut",
   "slideIn", "slideOut",
   "popIn", "popOut",
+  "revealIn",
   "rotateIn",
   "drawOn",
   "dropIn",
@@ -111,6 +112,11 @@ export function resolveAnimation(spec) {
   const tracks = [];
   const warnings = [];
 
+  // Alguns presets precisam que a camada seja preparada antes do primeiro keyframe —
+  // `revealIn` precisa de uma máscara. Isso não é animação, é montagem, e sai separado
+  // porque o adapter tem que criar a máscara ANTES de escrever qualquer chave.
+  const setups = [];
+
   alvos.forEach((alvo, i) => {
     const onde = `targets[${i}]`;
 
@@ -156,12 +162,14 @@ export function resolveAnimation(spec) {
       );
     }
 
-    for (const track of expandir(preset, alvo, { inicio, duracao, ease, onde, warnings })) {
+    const daCamada = [];
+    for (const track of expandir(preset, alvo, { inicio, duracao, ease, onde, warnings, setups: daCamada })) {
       tracks.push({ layer: alvo.layer, ...track });
     }
+    for (const setup of daCamada) setups.push({ layer: alvo.layer, ...setup });
   });
 
-  return { tracks, warnings };
+  return { tracks, setups, warnings };
 }
 
 /**
@@ -173,7 +181,7 @@ export function resolveAnimation(spec) {
  * para ser percebido como peso, não como tremor.
  */
 function expandir(preset, alvo, ctx) {
-  const { inicio, duracao, ease, onde, warnings } = ctx;
+  const { inicio, duracao, ease, onde, warnings, setups } = ctx;
   const fim = inicio + duracao;
   const e = EASINGS[ease];
 
@@ -182,20 +190,52 @@ function expandir(preset, alvo, ctx) {
     warnings.push(`${onde}: overshoot de ${overshoot}% passa de cartoon. A faixa útil é 5 a 15.`);
   }
 
-  /** Dois ou três keyframes entre dois valores, com o easing e o overshoot pedidos. */
+  // `settle` é o recuo depois do overshoot: passa do alvo, volta um pouco para o outro
+  // lado, e só então assenta — 0 → 110 → 96 → 100. É como uma mola de verdade se
+  // acomoda, e sem overshoot não existe: não há de onde recuar.
+  const settle = numero(alvo.settle, 0);
+  if (settle > 0 && overshoot <= 0) {
+    warnings.push(
+      `${onde}: settle sem overshoot não faz nada — o recuo acontece DEPOIS de passar ` +
+        "do alvo. Informe overshoot também, ou tire o settle."
+    );
+  }
+  if (settle > overshoot) {
+    warnings.push(
+      `${onde}: settle de ${settle}% maior que o overshoot de ${overshoot}% faz o ` +
+        "elemento recuar mais do que avançou, e a entrada parece tremer."
+    );
+  }
+
+  /** De dois a quatro keyframes entre dois valores, com easing, overshoot e settle. */
   const mover = (property, mode, de, para, { permiteOvershoot = true } = {}) => {
     const keys = [{ frame: inicio, value: de, easeOut: e.out, easeIn: e.in }];
 
     if (permiteOvershoot && overshoot > 0) {
-      const meio = inicio + Math.max(1, Math.round(duracao * 0.7));
+      // Com settle há dois keyframes intermediários, então o pico sobe para 60% para
+      // abrir espaço ao recuo. Sozinho, o pico fica em 70% — o retorno precisa de
+      // espaço para ser lido como peso e não como tremor.
+      const temSettle = settle > 0;
+      const pico = inicio + Math.max(1, Math.round(duracao * (temSettle ? 0.6 : 0.7)));
+
       // Só faz sentido se o keyframe intermediário não colidir com as pontas.
-      if (meio > inicio && meio < fim) {
+      if (pico > inicio && pico < fim) {
         keys.push({
-          frame: meio,
+          frame: pico,
           value: passarDoAlvo(de, para, overshoot),
           easeOut: e.in,
           easeIn: e.in,
         });
+
+        const recuo = inicio + Math.max(1, Math.round(duracao * 0.82));
+        if (temSettle && recuo > pico && recuo < fim) {
+          keys.push({
+            frame: recuo,
+            value: passarDoAlvo(de, para, -settle),
+            easeOut: e.in,
+            easeIn: e.in,
+          });
+        }
       }
     }
 
@@ -257,6 +297,63 @@ function expandir(preset, alvo, ctx) {
       return [
         preset === "popIn" ? mover("scale", "absolute", pequeno, cheio) : mover("scale", "absolute", cheio, pequeno),
       ];
+    }
+
+    /*
+     * Texto que sobe aparecendo atrás de uma máscara.
+     *
+     * ── Por que isto não é `slideIn` com uma máscara em cima ────────────────────
+     * Máscara vive no espaço da camada e é aplicada ANTES do transform: mascarar a
+     * camada e animar a posição dela move o recorte junto, e o texto desliza inteiro
+     * em vez de aparecer. É o erro que faz o rig parecer quebrado sem nenhuma mensagem.
+     *
+     * O que funciona é mexer no texto DENTRO da camada — a posição do animator de
+     * texto, que age no estágio da fonte, antes da máscara. A máscara fica parada, os
+     * glifos passam por trás dela. É o mesmo rig que se monta à mão.
+     *
+     * Consequência: só serve para camada de texto. Shape e imagem não têm animator, e
+     * o adapter recusa dizendo isso.
+     */
+    case "revealIn": {
+      const nome = alvo.direction ?? "up";
+      const dir = DIRECOES[nome];
+      if (!dir) {
+        throw new AnimError(
+          `${onde}.direction desconhecido: ${JSON.stringify(alvo.direction)}. ` +
+            `Disponíveis: ${Object.keys(DIRECOES).join(", ")}.`
+        );
+      }
+
+      // A distância certa é o tamanho da própria camada: menos que isso e o texto já
+      // começa meio visível dentro da janela, que é o defeito clássico deste rig. Só
+      // que o tamanho do texto só existe dentro do After Effects — então o valor sai
+      // daqui em unidade de camada e o adapter multiplica pelo que mediu.
+      const explicita = typeof alvo.distance === "number" && isFinite(alvo.distance);
+      const d = explicita ? alvo.distance : 1;
+      const unit = explicita ? "px" : dir[1] !== 0 ? "layerHeight" : "layerWidth";
+
+      // De onde o texto vem é o oposto de para onde ele vai, e é o lado em que a
+      // máscara tem que ser rente: folga ali deixaria o texto aparecer antes da hora.
+      const origem = { up: "bottom", down: "top", left: "right", right: "left" }[nome];
+
+      setups.push({
+        kind: "revealMask",
+        from: origem,
+        padding: Math.max(0, numero(alvo.maskPadding, 2)),
+      });
+
+      const track = mover("textPosition", "offset", [dir[0] * d, dir[1] * d], [0, 0]);
+      track.unit = unit;
+
+      const tracks = [track];
+
+      // Sem fade por padrão: a máscara já resolve o aparecimento, e somar opacidade
+      // deixa o texto cinzento no meio do movimento em vez de nítido atrás da janela.
+      if (alvo.withFade === true) {
+        tracks.push(mover("opacity", "absolute", [0], [100], { permiteOvershoot: false }));
+      }
+
+      return tracks;
     }
 
     case "rotateIn": {

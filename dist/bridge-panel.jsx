@@ -1877,7 +1877,10 @@ function vecSaveFrameInterno(comp, alinhado, destino, metodo) {
  * `packages/core/src/anim.js`, onde tem teste.
  */
 
-/*global app, KeyframeEase, KeyframeInterpolationType, ShapeLayer, vec*/
+/*global app, KeyframeEase, KeyframeInterpolationType, MaskMode, Shape, ShapeLayer, TextLayer, vec*/
+
+/** Nome da máscara e do animator que criamos, para reusar em vez de empilhar. */
+var VEC_REVEAL = "Vectorize Reveal";
 
 var vec = vec || {};
 
@@ -1895,7 +1898,127 @@ function vecPropAnimavel(layer, nome) {
     return vecTrimPaths(layer, nome);
   }
 
+  if (nome === "textPosition") return vecAnimatorPosicao(layer);
+
   throw new Error("Propriedade animável desconhecida: " + nome);
+}
+
+/**
+ * A posição do animator de texto, criando o animator se ele não existir.
+ *
+ * ── Por que não a posição da camada ───────────────────────────────────────────
+ * Máscara é aplicada antes do transform. Mascarar a camada e animar a posição dela
+ * arrasta o recorte junto, e o texto desliza inteiro em vez de aparecer atrás da
+ * janela. O animator age no estágio do texto, antes da máscara: os glifos se movem, o
+ * recorte fica parado. É a diferença entre o rig funcionar e parecer quebrado sem
+ * nenhuma mensagem de erro.
+ *
+ * O animator ganha nome próprio para ser reusado — rodar de novo em cima da mesma
+ * camada não deve empilhar animator novo a cada chamada.
+ */
+function vecAnimatorPosicao(layer) {
+  if (!(layer instanceof TextLayer)) {
+    throw new Error(
+      'A camada "' + layer.name + '" não é de texto, e o preset revealIn depende do ' +
+        "animator de texto. Para shape ou imagem, use slideIn — ou faça a máscara à mão " +
+        "numa precomp, que é o equivalente fora do texto."
+    );
+  }
+
+  var animadores = layer.property("ADBE Text Properties").property("ADBE Text Animators");
+  var animador = null;
+  var i;
+
+  for (i = 1; i <= animadores.numProperties; i++) {
+    if (animadores.property(i).name === VEC_REVEAL) {
+      animador = animadores.property(i);
+      break;
+    }
+  }
+
+  if (animador === null) {
+    animador = animadores.addProperty("ADBE Text Animator");
+    animador.name = VEC_REVEAL;
+    // Sem seletor o animator não afeta caractere nenhum: ele nasce vazio, e a
+    // propriedade recebe keyframe que não muda nada na tela.
+    animador.property("ADBE Text Selectors").addProperty("ADBE Text Selector");
+  }
+
+  var props = animador.property("ADBE Text Animator Properties");
+  var pos = null;
+  try {
+    pos = props.property("ADBE Text Position 3D");
+  } catch (e) {
+    pos = null;
+  }
+  if (pos === null) pos = props.addProperty("ADBE Text Position 3D");
+
+  return pos;
+}
+
+/** Retângulo da camada no espaço dela, no instante pedido. */
+function vecRetangulo(layer, tempo) {
+  var r = layer.sourceRectAtTime(tempo, false);
+  return { top: r.top, left: r.left, width: r.width, height: r.height };
+}
+
+/**
+ * A janela por onde o texto aparece.
+ *
+ * Folga em três lados e rente no quarto: rente do lado de onde o texto vem, porque
+ * folga ali deixa o texto assomar antes da hora. Nos outros três a folga existe para
+ * não raspar acento em cima nem perna de "g" embaixo.
+ */
+function vecCriarMascaraReveal(layer, setup, avisos) {
+  var mascaras = layer.property("ADBE Masks");
+  var mascara = null;
+  var i;
+
+  for (i = 1; i <= mascaras.numProperties; i++) {
+    if (mascaras.property(i).name === VEC_REVEAL) {
+      mascara = mascaras.property(i);
+      break;
+    }
+  }
+
+  if (mascara === null && mascaras.numProperties > 0) {
+    avisos.push(
+      '"' + layer.name + '" já tinha ' + mascaras.numProperties + " máscara(s). A janela " +
+        "do revealIn entra somando a elas, então o resultado pode não ser o esperado."
+    );
+  }
+
+  var r = vecRetangulo(layer, layer.inPoint);
+  var pad = setup.padding || 0;
+
+  var topo = r.top - pad;
+  var esquerda = r.left - pad;
+  var direita = r.left + r.width + pad;
+  var base = r.top + r.height + pad;
+
+  if (setup.from === "bottom") base = r.top + r.height;
+  else if (setup.from === "top") topo = r.top;
+  else if (setup.from === "left") esquerda = r.left;
+  else if (setup.from === "right") direita = r.left + r.width;
+
+  if (mascara === null) {
+    mascara = mascaras.addProperty("ADBE Mask Atom");
+    mascara.name = VEC_REVEAL;
+  }
+
+  var forma = new Shape();
+  forma.vertices = [
+    [esquerda, topo],
+    [direita, topo],
+    [direita, base],
+    [esquerda, base],
+  ];
+  forma.closed = true;
+
+  mascara.property("ADBE Mask Shape").setValue(forma);
+  mascara.maskMode = MaskMode.ADD;
+
+  return { top: topo, left: esquerda, bottom: base, right: direita };
 }
 
 /**
@@ -1948,6 +2071,15 @@ function vecTrimPaths(layer, nome) {
   return trim.property("ADBE Vector Trim Offset");
 }
 
+/** A camada pelo nome, ou null — `comp.layer(nome)` lança quando não acha. */
+function vecCamadaPorNome(comp, nome) {
+  try {
+    return comp.layer(nome);
+  } catch (e) {
+    return null;
+  }
+}
+
 /** Remove os keyframes que já existiam, do último para o primeiro. */
 function vecLimparKeys(prop) {
   // De trás para frente: remover o primeiro reindexa os demais, e um laço crescente
@@ -1976,6 +2108,20 @@ function vecValorAe(prop, valores, base, modo) {
     var parte = i < valores.length ? valores[i] : 0;
     out.push(modo === "offset" ? base[i] + parte : parte);
   }
+  return out;
+}
+
+/** Vetor de zeros, para zerar propriedade de dimensão desconhecida. */
+function vecZeros(dimensoes) {
+  var out = [];
+  for (var i = 0; i < dimensoes; i++) out.push(0);
+  return out;
+}
+
+/** Valores em unidade de camada viram pixel. */
+function vecEmPixels(valores, escala) {
+  var out = [];
+  for (var i = 0; i < valores.length; i++) out.push(valores[i] * escala);
   return out;
 }
 
@@ -2010,9 +2156,36 @@ function vecAplicarTrilha(comp, layer, track) {
   var dimensoes = base instanceof Array ? base.length : 1;
   var i;
 
+  // ── Unidade de camada ───────────────────────────────────────────────────────
+  // O core diz "uma altura de camada" porque o tamanho do texto só existe dentro do
+  // After Effects. Aqui isso vira pixel. A medida é tirada com a propriedade zerada:
+  // sobra de uma execução anterior deslocaria os glifos e a altura sairia errada,
+  // fazendo o texto começar meio visível — que é o defeito clássico deste rig.
+  var escala = 1;
+  if (track.unit === "layerHeight" || track.unit === "layerWidth") {
+    try {
+      prop.setValue(dimensoes === 1 ? 0 : vecZeros(dimensoes));
+    } catch (e) {}
+
+    base = prop.value;
+
+    var r = vecRetangulo(layer, layer.inPoint);
+    escala = track.unit === "layerHeight" ? r.height : r.width;
+
+    if (!(escala > 0)) {
+      throw new Error(
+        'Não consegui medir "' + layer.name + '" — o retângulo saiu com ' + escala +
+          " de tamanho. Camada de texto vazia mede zero; informe `distance` em pixels."
+      );
+    }
+  }
+
   for (i = 0; i < track.keys.length; i++) {
     var k = track.keys[i];
-    prop.setValueAtTime(k.frame / comp.frameRate, vecValorAe(prop, k.value, base, track.mode));
+    prop.setValueAtTime(
+      k.frame / comp.frameRate,
+      vecValorAe(prop, escala === 1 ? k.value : vecEmPixels(k.value, escala), base, track.mode)
+    );
   }
 
   // O easing só pode ser aplicado depois de todos os keyframes existirem: o índice de
@@ -2058,29 +2231,46 @@ function vecAplicarTrilha(comp, layer, track) {
  * Erro numa camada não derruba as outras: um designer prefere sete camadas animadas e
  * um aviso a zero camadas e um stack trace.
  *
- * @returns {{ok, compName, applied, keyframes, warnings}}
+ * @returns {{ok, compName, applied, keyframes, masks, warnings}}
  */
-vec.applyAnimation = function (tracks, options) {
+vec.applyAnimation = function (tracks, options, setups) {
   options = options || {};
+  setups = setups || [];
 
   var comp = vec.findComp(options.compName);
   var avisos = [];
   var aplicadas = 0;
   var keyframes = 0;
+  var mascaras = 0;
 
   var silenciado = vec.suppressDialogs();
   app.beginUndoGroup("Vectorize AE - animation");
 
   try {
-    for (var i = 0; i < tracks.length; i++) {
-      var track = tracks[i];
-      var layer = null;
+    // Montagem antes de keyframe: a máscara é medida com o texto parado, e criá-la
+    // depois de escrever as chaves mediria o texto já deslocado.
+    for (var s = 0; s < setups.length; s++) {
+      var setup = setups[s];
+      var alvo = vecCamadaPorNome(comp, setup.layer);
+
+      if (alvo === null) {
+        avisos.push('Camada não encontrada: "' + setup.layer + '" — máscara ignorada.');
+        continue;
+      }
 
       try {
-        layer = comp.layer(track.layer);
+        if (setup.kind === "revealMask") {
+          vecCriarMascaraReveal(alvo, setup, avisos);
+          mascaras++;
+        }
       } catch (e) {
-        layer = null;
+        avisos.push('"' + setup.layer + '" / máscara: ' + vec.describeError(e));
       }
+    }
+
+    for (var i = 0; i < tracks.length; i++) {
+      var track = tracks[i];
+      var layer = vecCamadaPorNome(comp, track.layer);
 
       if (layer === null) {
         avisos.push('Camada não encontrada: "' + track.layer + '" — trilha ignorada.');
@@ -2104,6 +2294,7 @@ vec.applyAnimation = function (tracks, options) {
     compName: comp.name,
     applied: aplicadas,
     keyframes: keyframes,
+    masks: mascaras,
     warnings: avisos,
   };
 };
@@ -3174,7 +3365,7 @@ vec.tools.animate = function (args) {
   if (!args.tracks || !(args.tracks instanceof Array)) {
     throw new Error("animate precisa de `tracks` — trilhas já resolvidas pelo core.");
   }
-  return vec.applyAnimation(args.tracks, args.options || {});
+  return vec.applyAnimation(args.tracks, args.options || {}, args.setups || []);
 };
 
 // ---------------------------------------------------------------- arrumação
@@ -3434,7 +3625,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 13;
+var VEC_PANEL_BUILD = 14;
 
 var VEC_BRIDGE_SCHEMA = 3;
 

@@ -480,3 +480,31 @@ test("move_to_folder sem ids recusa antes de criar pasta nenhuma", async () => {
   assert.equal(r.isError, true);
   assert.equal(chamadas.length, 0);
 });
+
+test("animate_layers manda a máscara junto, não só os keyframes", async () => {
+  // A máscara do revealIn precisa existir ANTES do primeiro keyframe: ela é medida com
+  // o texto parado. Se o servidor esquecesse `setups` no caminho, a animação chegaria
+  // inteira e o texto deslizaria à vista de todos, sem nenhum erro para explicar.
+  const { client, chamadas } = await conectar({
+    animate: () => ({ ok: true, compName: "SC01", applied: 1, keyframes: 2, masks: 1, warnings: [] }),
+  });
+
+  const r = await client.callTool({
+    name: "animate_layers",
+    arguments: {
+      animJson: JSON.stringify({ fps: 25, targets: [{ layer: "Título", preset: "revealIn" }] }),
+      compName: "SC01",
+    },
+  });
+
+  assert.equal(r.isError, undefined, JSON.stringify(r.content));
+
+  const enviado = chamadas[0].args;
+  assert.deepEqual(enviado.setups, [
+    { layer: "Título", kind: "revealMask", from: "bottom", padding: 2 },
+  ]);
+  assert.equal(enviado.tracks[0].property, "textPosition");
+  assert.equal(enviado.tracks[0].unit, "layerHeight");
+
+  assert.match(r.content[0].text, /"mascaras": 1/);
+});

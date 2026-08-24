@@ -1226,7 +1226,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
 
       const { result } = await call(
         "animate",
-        { tracks: resolvido.tracks, options: { compName } },
+        { tracks: resolvido.tracks, setups: resolvido.setups, options: { compName } },
         { timeoutMs: 120_000 }
       );
 
@@ -1237,6 +1237,7 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         comp: result.compName,
         trilhas: result.applied,
         keyframes: result.keyframes,
+        mascaras: result.masks || undefined,
         avisos: avisos.length ? avisos : undefined,
         proximoPasso:
           "Chame save_frame em dois ou três instantes diferentes e olhe — nenhuma " +
