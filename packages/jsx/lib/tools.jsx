@@ -23,6 +23,7 @@
 //@include "ae-frame.jsx"
 //@include "ae-anim.jsx"
 //@include "ae-image.jsx"
+//@include "ae-footage.jsx"
 //@include "ae-sequence.jsx"
 //@include "ae-organize.jsx"
 //@include "build-scene.jsx"
@@ -197,6 +198,19 @@ vec.tools.animate = function (args) {
     throw new Error("animate precisa de `tracks` — trilhas já resolvidas pelo core.");
   }
   return vec.applyAnimation(args.tracks, args.options || {}, args.setups || []);
+};
+
+// ---------------------------------------------------------------- material pronto
+
+/**
+ * Traz um arquivo do disco para dentro da comp.
+ *
+ * Quem gera a imagem ou o vídeo é a conversa, não esta ferramenta — o Claude Code já
+ * tem provedores ligados, e qual deles é permitido é decisão de política, não de
+ * código. Aqui o contrato é o mais estreito possível: caminho em disco vira camada.
+ */
+vec.tools.import_footage = function (args) {
+  return vec.importFootage(args || {});
 };
 
 // ---------------------------------------------------------------- arrumação

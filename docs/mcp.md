@@ -124,6 +124,7 @@ e a lista de comps, está tudo ligado.
 | `compare_images` | Compara referência e reconstrução, por área e por estrutura |
 | `crop_image` | Recorta da referência o que não dá para vetorizar, e remove o fundo |
 | `measure_image` | Mede cor, forma e raio de canto nos pixels de um PNG |
+| `import_footage` | Traz um arquivo do disco para a comp, enquadrado e no tempo |
 | `describe_brand` | Cores e fontes da marca em uso |
 | `set_brand` | Registra a identidade do cliente, ou troca de perfil |
 | `describe_scene_format` | Explica o formato do SceneSpec |
@@ -162,11 +163,33 @@ as cores vêm da imagem e o texto sai em Arial.
 
 ### Sobre o tamanho do conjunto
 
-São vinte e uma, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+São vinte e duas, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
 formatação própria, ou algo que o modelo erra fazendo à mão.
+
+### O que gera não é esta ferramenta
+
+`import_footage` traz um arquivo do disco para a comp: enquadrado na caixa, no tempo
+pedido, com o item reaproveitado se já estiver no projeto. Só isso — e o "só isso" é a
+decisão.
+
+Gerar imagem, gerar vídeo, tirar fundo, fazer inpainting: quem faz é a **conversa**. O
+Claude Code já tem provedores ligados por MCP, e qual deles é permitido muda por empresa,
+por cliente e por mês. Amarrar um provedor dentro do Vectorize seria congelar no código
+uma decisão que é de política — e trocar de fornecedor viraria release de software.
+
+Com o contrato estreito, o fluxo fica: a conversa gera ou edita, salva em disco, e chama
+`import_footage` com o caminho. Qualquer provedor que saiba gravar um arquivo serve.
+
+Duas coisas que a resposta conta porque o After Effects não conta:
+
+- **Vídeo não estica.** Pedir que ele cubra uma comp mais longa encurta a camada em
+  silêncio, e o buraco no fim só aparece na renderização. A resposta diz de quantos
+  frames ficou.
+- **Áudio vem junto.** Um clipe com faixa de áudio entra tocando por cima da locução que
+  já está na master.
 
 ### Arrumação de projeto age por `id`
 

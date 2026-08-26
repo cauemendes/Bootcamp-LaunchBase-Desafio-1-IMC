@@ -508,3 +508,71 @@ test("animate_layers manda a máscara junto, não só os keyframes", async () =>
 
   assert.match(r.content[0].text, /"mascaras": 1/);
 });
+
+// ── Material pronto ───────────────────────────────────────────────────────────
+// Esta ferramenta não gera nada: ela recebe um caminho e coloca na comp. O que os
+// testes travam é o que a resposta precisa contar para o resultado ser conferível —
+// o enquadramento e, principalmente, o tempo que sobrou quando o vídeo é curto.
+
+test("import_footage devolve o enquadramento e o que o arquivo é", async () => {
+  const { client, chamadas } = await conectar({
+    import_footage: (args) => ({
+      ok: true,
+      comp: "SC01",
+      layer: { name: "shoe", index: 1 },
+      source: {
+        name: "shoe.png",
+        path: args.path,
+        width: 800,
+        height: 600,
+        durationSeconds: 5,
+        frameRate: 0,
+        isStill: true,
+        hasAlpha: true,
+        hasAudio: false,
+      },
+      reused: false,
+      placed: { x: 100, y: 200, width: 400, height: 300, fit: "contain", scale: 50 },
+      timing: { startFrame: 0, durationFrames: 125, compDurationFrames: 125 },
+      warnings: [],
+    }),
+  });
+
+  const r = await client.callTool({
+    name: "import_footage",
+    arguments: { path: "/tmp/shoe.png", compName: "SC01", x: 100, y: 200, width: 400, height: 300 },
+  });
+
+  assert.equal(r.isError, undefined, JSON.stringify(r.content));
+  const texto = r.content[0].text;
+
+  // `hasAlpha` é o que diz ao modelo se ainda falta tirar fundo.
+  assert.match(texto, /"hasAlpha": true/);
+  assert.match(texto, /"scale": 50/);
+  assert.equal(chamadas[0].args.path, "/tmp/shoe.png");
+});
+
+test("import_footage repassa o aviso de vídeo curto em vez de engolir", async () => {
+  // Vídeo não estica. Se o aviso sumisse aqui, o buraco no fim da cena só apareceria
+  // na renderização — que é tarde.
+  const { client } = await conectar({
+    import_footage: () => ({
+      ok: true,
+      comp: "SC01",
+      layer: { name: "bg", index: 1 },
+      source: { name: "bg.mp4", path: "/tmp/bg.mp4", width: 1920, height: 1080, durationSeconds: 3, frameRate: 25, isStill: false, hasAlpha: false, hasAudio: true },
+      reused: false,
+      placed: { x: 0, y: 0, width: 1920, height: 1080, fit: "contain", scale: 100 },
+      timing: { startFrame: 0, durationFrames: 75, compDurationFrames: 125 },
+      warnings: ["Vídeo não estica: sobra um buraco de 50 frames no fim."],
+    }),
+  });
+
+  const r = await client.callTool({
+    name: "import_footage",
+    arguments: { path: "/tmp/bg.mp4", fillComp: true },
+  });
+
+  assert.match(r.content[0].text, /buraco de 50 frames/);
+  assert.match(r.content[0].text, /"durationFrames": 75/);
+});

@@ -11,7 +11,7 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Vinte e uma ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Vinte e duas ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
@@ -1386,6 +1386,79 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         proximoPasso:
           "Abra a master e ouça. As durações estimadas põem as cenas perto do lugar " +
           "certo, não no lugar exato — o ajuste fino é ouvindo.",
+      });
+    }
+  );
+
+  // ---------------------------------------------------------------- material pronto
+
+  server.registerTool(
+    "import_footage",
+    {
+      title: "Trazer um arquivo para dentro da comp",
+      description:
+        "Importa uma imagem ou um vídeo do disco e coloca como camada, enquadrado e no " +
+        "tempo pedido. Serve para tudo que já existe pronto em arquivo: uma foto do " +
+        "cliente, um recorte, um fundo, uma placa de vídeo.\n\n" +
+        "**Esta ferramenta não gera nada.** Se o arquivo precisa ser criado, editado ou " +
+        "ter o fundo removido, faça isso com as ferramentas que você já tem nesta " +
+        "conversa, salve o resultado em disco, e traga o caminho para cá. Assim o " +
+        "provedor pode mudar sem mudar nada aqui — e qual provedor é permitido varia por " +
+        "empresa e por cliente. Se não houver nenhum ligado, diga isso em vez de " +
+        "improvisar.\n\n" +
+        "Sem retângulo, a caixa é a comp inteira — o caso do fundo e da placa de vídeo. " +
+        "As coordenadas são as do canvas, origem no canto superior esquerdo.\n\n" +
+        "Imagem parada dura o que você mandar. **Vídeo não estica**: pedir que ele cubra " +
+        "uma comp mais longa encurta a camada, e a resposta diz de quanto ficou o buraco " +
+        "em vez de deixar você descobrir renderizando.\n\n" +
+        "O After Effects não importa SVG — use .ai, .eps, .pdf, ou PNG grande com " +
+        "transparência.",
+      inputSchema: {
+        path: z.string().describe("Caminho completo do arquivo em disco."),
+        compName: z.string().optional().describe("Composição. Omitido = a ativa."),
+        name: z.string().optional().describe("Nome da camada. Padrão: o nome do arquivo."),
+        x: z.number().optional().describe("Canto esquerdo da caixa, no canvas."),
+        y: z.number().optional().describe("Topo da caixa, no canvas."),
+        width: z.number().optional().describe("Largura da caixa."),
+        height: z.number().optional().describe("Altura da caixa."),
+        fit: z
+          .enum(["contain", "cover", "stretch", "none"])
+          .optional()
+          .describe(
+            "contain (padrão) cabe inteira na caixa; cover preenche e sobra fora; " +
+              "stretch distorce; none mantém 100%."
+          ),
+        startFrame: z.number().int().optional().describe("Frame em que a camada começa. Padrão 0."),
+        durationFrames: z
+          .number()
+          .int()
+          .optional()
+          .describe("Duração da camada em frames. Em vídeo, corta; nunca estica."),
+        fillComp: z
+          .boolean()
+          .optional()
+          .describe("A camada cobre a comp inteira, do início ao fim."),
+        opacity: z.number().optional().describe("Opacidade 0-100. Padrão 100."),
+        folderName: z
+          .string()
+          .optional()
+          .describe("Pasta do projeto onde guardar o item importado. Criada se não existir."),
+      },
+    },
+    async (args) => {
+      const { result } = await call("import_footage", args, { timeoutMs: 120_000 });
+
+      return asText({
+        comp: result.comp,
+        camada: result.layer,
+        arquivo: result.source,
+        jaEstavaNoProjeto: result.reused || undefined,
+        enquadramento: result.placed,
+        tempo: result.timing,
+        avisos: result.warnings?.length ? result.warnings : undefined,
+        proximoPasso:
+          "Chame save_frame e olhe o enquadramento. O `fit` acerta a proporção, não a " +
+          "intenção — sobra de fundo e corte na borda só aparecem vendo.",
       });
     }
   );

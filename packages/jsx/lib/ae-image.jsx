@@ -45,7 +45,7 @@ function vecEhVetor(arquivo) {
 }
 
 /** Escala que faz a imagem cobrir ou caber na caixa, preservando proporção. */
-function vecEscalaParaCaixa(larguraFonte, alturaFonte, caixaW, caixaH, fit) {
+vec.escalaParaCaixa = function (larguraFonte, alturaFonte, caixaW, caixaH, fit) {
   if (!larguraFonte || !alturaFonte) return [100, 100];
 
   var porX = (caixaW / larguraFonte) * 100;
@@ -56,25 +56,36 @@ function vecEscalaParaCaixa(larguraFonte, alturaFonte, caixaW, caixaH, fit) {
   // `cover` preenche a caixa e sobra fora; `contain` cabe inteira e sobra espaço.
   var fator = fit === "contain" ? Math.min(porX, porY) : Math.max(porX, porY);
   return [fator, fator];
-}
+};
 
-/** Importa o arquivo, reaproveitando o item se ele já estiver no projeto. */
-function vecImportar(arquivo) {
+/**
+ * O item do projeto que já aponta para este arquivo, ou null.
+ *
+ * Importar duas vezes cria dois itens para o mesmo arquivo, e o painel de projeto
+ * fica com duplicatas que o designer teria que limpar à mão.
+ */
+vec.itemPorArquivo = function (arquivo) {
   var alvo = arquivo.fsName;
 
   for (var i = 1; i <= app.project.numItems; i++) {
     var item = app.project.item(i);
     try {
       if (item.mainSource && item.mainSource.file && item.mainSource.file.fsName === alvo) {
-        // Importar duas vezes cria dois itens apontando para o mesmo arquivo, e o
-        // painel de projeto fica com duplicatas que o designer teria que limpar.
         return item;
       }
     } catch (e) {}
   }
 
+  return null;
+};
+
+/** Importa o arquivo, reaproveitando o item se ele já estiver no projeto. */
+vec.importarArquivo = function (arquivo) {
+  var existente = vec.itemPorArquivo(arquivo);
+  if (existente !== null) return existente;
+
   return app.project.importFile(new ImportOptions(arquivo));
-}
+};
 
 /**
  * Constrói a camada.
@@ -104,7 +115,7 @@ vec.addImageLayer = function (comp, spec, opts) {
       return { layer: vecPlaceholder(comp, spec, aviso), warning: aviso };
     }
 
-    var item = vecImportar(arquivo);
+    var item = vec.importarArquivo(arquivo);
     var layer = comp.layers.add(item);
 
     layer.name = vec.safeName(spec.name, "Image");
@@ -123,7 +134,7 @@ vec.addImageLayer = function (comp, spec, opts) {
     }
 
     var t = layer.property("ADBE Transform Group");
-    var escala = vecEscalaParaCaixa(
+    var escala = vec.escalaParaCaixa(
       item.width,
       item.height,
       spec.width,
