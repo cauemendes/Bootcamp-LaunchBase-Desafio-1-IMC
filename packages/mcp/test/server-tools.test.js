@@ -52,6 +52,28 @@ function gravarPng(destino, width, height, pixel) {
   return destino;
 }
 
+/** Como `gravarPng`, mas com alpha — o que os recortes de verdade têm. */
+function gravarPngAlpha(destino, width, height, pixel) {
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const c = pixel(x, y);
+      data[i] = c[0];
+      data[i + 1] = c[1];
+      data[i + 2] = c[2];
+      data[i + 3] = c[3];
+    }
+  }
+
+  fs.writeFileSync(
+    destino,
+    encodePng({ width, height, data }, (b) => new Uint8Array(zlib.deflateSync(Buffer.from(b))))
+  );
+
+  return destino;
+}
+
 /**
  * Sobe o servidor com uma ponte falsa e devolve um cliente MCP conectado.
  *
@@ -575,4 +597,95 @@ test("import_footage repassa o aviso de vídeo curto em vez de engolir", async (
 
   assert.match(r.content[0].text, /buraco de 50 frames/);
   assert.match(r.content[0].text, /"durationFrames": 75/);
+});
+
+test("import_layers mede cada recorte no alpha e recorta antes de importar", () => {
+  // O caro aqui é a posição. Se cada camada não voltar exatamente onde estava, a
+  // remontagem parece certa de longe e desmonta na primeira animação.
+  return conectar({
+    import_layers: () => ({
+      ok: true,
+      comp: "SC01",
+      placed: 2,
+      layers: [],
+      canvasScale: 1,
+      warnings: [],
+    }),
+  }).then(async ({ client, chamadas }) => {
+    const dir = tempDir();
+
+    // Dois elementos em cantos diferentes do mesmo canvas, o resto transparente.
+    const canvas = (x0, y0, x1, y1) => (x, y) =>
+      x >= x0 && x <= x1 && y >= y0 && y <= y1 ? [10, 20, 30, 255] : [0, 0, 0, 0];
+
+    const a = gravarPngAlpha(path.join(dir, "frente.png"), 100, 80, canvas(10, 10, 29, 39));
+    const b = gravarPngAlpha(path.join(dir, "fundo.png"), 100, 80, canvas(60, 50, 89, 69));
+
+    const r = await client.callTool({
+      name: "import_layers",
+      arguments: { layers: [{ path: a, name: "frente" }, { path: b, name: "fundo" }], compName: "SC01" },
+    });
+
+    assert.equal(r.isError, undefined, JSON.stringify(r.content));
+
+    const enviado = chamadas[0].args;
+    assert.equal(enviado.canvasWidth, 100);
+    assert.equal(enviado.canvasHeight, 80);
+
+    // Caixa medida no alpha, não informada por ninguém.
+    assert.deepEqual(
+      enviado.layers.map((l) => [l.name, l.x, l.y, l.width, l.height]),
+      [
+        ["frente", 10, 10, 20, 30],
+        ["fundo", 60, 50, 30, 20],
+      ]
+    );
+
+    // E o arquivo recortado foi realmente gravado.
+    assert.ok(fs.existsSync(enviado.layers[0].path), "o PNG recortado tem que existir");
+    assert.match(enviado.layers[0].path, /-trim\.png$/);
+  });
+});
+
+test("import_layers avisa em vez de importar um recorte inteiro transparente", () => {
+  // Seleção que não acha nada devolve PNG vazio, sem erro. Importado, vira camada
+  // invisível no meio de dez — e ninguém desconfia do arquivo.
+  return conectar({
+    import_layers: () => ({ ok: true, comp: "SC01", placed: 1, layers: [], canvasScale: 1, warnings: [] }),
+  }).then(async ({ client, chamadas }) => {
+    const dir = tempDir();
+    const bom = gravarPngAlpha(path.join(dir, "bom.png"), 40, 40, (x, y) =>
+      x > 5 && x < 20 && y > 5 && y < 20 ? [0, 0, 0, 255] : [0, 0, 0, 0]
+    );
+    const vazio = gravarPngAlpha(path.join(dir, "vazio.png"), 40, 40, () => [0, 0, 0, 0]);
+
+    const r = await client.callTool({
+      name: "import_layers",
+      arguments: { layers: [{ path: bom, name: "bom" }, { path: vazio, name: "sumido" }] },
+    });
+
+    assert.equal(r.isError, undefined, JSON.stringify(r.content));
+    assert.match(r.content[0].text, /sumido.*inteiro transparente|inteiro transparente/s);
+    assert.equal(chamadas[0].args.layers.length, 1, "só o recorte com conteúdo é importado");
+  });
+});
+
+test("import_layers recusa quando os recortes têm canvas diferentes", () => {
+  return conectar({
+    import_layers: () => ({ ok: true, comp: "SC01", placed: 1, layers: [], canvasScale: 1, warnings: [] }),
+  }).then(async ({ client, chamadas }) => {
+    const dir = tempDir();
+    const cheio = (x, y) => (x < 5 && y < 5 ? [0, 0, 0, 255] : [0, 0, 0, 0]);
+    const a = gravarPngAlpha(path.join(dir, "a.png"), 40, 40, cheio);
+    const b = gravarPngAlpha(path.join(dir, "b.png"), 30, 30, cheio);
+
+    const r = await client.callTool({
+      name: "import_layers",
+      arguments: { layers: [{ path: a }, { path: b }], trim: false },
+    });
+
+    // O primeiro serve, então a chamada segue — mas o desalinhado é dito, não colocado.
+    assert.equal(chamadas[0].args.layers.length, 1);
+    assert.match(r.content[0].text, /não remontam alinhados/);
+  });
 });

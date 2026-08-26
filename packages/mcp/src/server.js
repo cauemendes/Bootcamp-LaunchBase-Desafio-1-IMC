@@ -11,7 +11,7 @@
  * reconstrói o design é a mesma que você já usa no terminal.
  *
  * ── Sobre o tamanho do conjunto ───────────────────────────────────────────────
- * Vinte e duas ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
+ * Vinte e três ferramentas, de propósito. Cada uma ocupa contexto em toda conversa; um
  * conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber
  * aqui vai por `execute_script`, e só vira ferramenta dedicada quando houver motivo.
  */
@@ -1459,6 +1459,142 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         proximoPasso:
           "Chame save_frame e olhe o enquadramento. O `fit` acerta a proporção, não a " +
           "intenção — sobra de fundo e corte na borda só aparecem vendo.",
+      });
+    }
+  );
+
+  server.registerTool(
+    "import_layers",
+    {
+      title: "Remontar uma imagem achatada como várias camadas",
+      description:
+        "Recebe vários PNGs com transparência — um por elemento, todos recortados do " +
+        "mesmo original — e os remonta na composição, cada um no lugar exato que ocupava " +
+        "e na ordem de empilhamento pedida. É o passo que transforma um JPG de referência " +
+        "num projeto com camadas separadas para animar.\n\n" +
+        "**Esta ferramenta não recorta.** Os recortes vêm das ferramentas de imagem que " +
+        "você já tem nesta conversa (seleção por prompt, remoção de fundo). Salve cada " +
+        "elemento como PNG com alpha e passe os caminhos aqui.\n\n" +
+        "O caminho mais seguro é **manter cada recorte no tamanho do canvas original**, " +
+        "com o resto transparente: aí a remontagem é fiel por construção. A posição de " +
+        "cada camada é medida no alpha, então não é preciso informar coordenada nenhuma.\n\n" +
+        "A ordem da lista é de cima para baixo, como na timeline: o primeiro fica por " +
+        "cima.\n\n" +
+        "Recorte que voltou **inteiro transparente** significa que a seleção não achou " +
+        "nada — isso vira aviso e a camada não entra, em vez de virar uma camada " +
+        "invisível que ninguém encontra depois.",
+      inputSchema: {
+        layers: z
+          .array(
+            z.object({
+              path: z.string().describe("Caminho do PNG com alpha."),
+              name: z.string().optional().describe("Nome da camada. Padrão: o nome do arquivo."),
+              opacity: z.number().optional().describe("Opacidade 0-100. Padrão 100."),
+            })
+          )
+          .describe("Os recortes, de cima para baixo."),
+        compName: z.string().optional().describe("Composição. Omitido = a ativa."),
+        trim: z
+          .boolean()
+          .optional()
+          .describe(
+            "Recorta cada PNG ao conteúdo antes de importar (padrão true). Camada leve, " +
+              "âncora no meio do elemento — é o que faz escala e rotação girarem no lugar " +
+              "certo na hora de animar. Com false, cada camada entra do tamanho do canvas."
+          ),
+      },
+    },
+    async ({ layers, compName, trim = true }) => {
+      if (!layers?.length) return asError("Informe pelo menos um recorte em `layers`.");
+
+      const resolvidos = [];
+      const avisos = [];
+      let canvasWidth = null;
+      let canvasHeight = null;
+
+      for (const camada of layers) {
+        let img;
+        try {
+          img = carregarPng(camada.path);
+        } catch (err) {
+          avisos.push(`${camada.path}: não consegui ler (${err.message}).`);
+          continue;
+        }
+
+        // Todos os recortes têm que vir do mesmo canvas, senão a remontagem não fecha.
+        // Um provedor que reduz a imagem antes de processar quebra isso em silêncio.
+        if (canvasWidth === null) {
+          canvasWidth = img.width;
+          canvasHeight = img.height;
+        } else if (img.width !== canvasWidth || img.height !== canvasHeight) {
+          avisos.push(
+            `${camada.path}: veio em ${img.width}x${img.height}, e os outros em ` +
+              `${canvasWidth}x${canvasHeight}. Recortes de tamanhos diferentes não remontam ` +
+              "alinhados — refaça este no tamanho do original."
+          );
+          continue;
+        }
+
+        const caixa = contentBounds(img);
+
+        // ── O recorte vazio ─────────────────────────────────────────────────────
+        // Seleção por prompt que não acha nada devolve um PNG inteiro transparente, sem
+        // erro. Importado, vira uma camada invisível no meio de dez — e quem for procurar
+        // o defeito vai olhar posição, escala e modo de mesclagem antes de desconfiar do
+        // arquivo. Dizer aqui custa uma linha.
+        if (caixa.empty) {
+          avisos.push(
+            `${camada.name ?? camada.path}: o recorte está inteiro transparente — a ` +
+              "seleção não encontrou o elemento. Refaça com outro termo, ou tire este da lista."
+          );
+          continue;
+        }
+
+        let destino = camada.path;
+        let colocacao = { x: 0, y: 0, width: img.width, height: img.height };
+
+        if (trim) {
+          destino = camada.path.replace(/(\.png)?$/i, "") + "-trim.png";
+          fs.writeFileSync(
+            destino,
+            encodePng(trimTo(img, caixa), (b) => new Uint8Array(zlib.deflateSync(Buffer.from(b))))
+          );
+          colocacao = { x: caixa.x, y: caixa.y, width: caixa.width, height: caixa.height };
+        }
+
+        resolvidos.push({
+          path: destino,
+          name: camada.name,
+          opacity: camada.opacity,
+          ...colocacao,
+        });
+      }
+
+      if (!resolvidos.length) {
+        return asError(
+          "Nenhum recorte utilizável.\n\n" + avisos.map((a) => `- ${a}`).join("\n")
+        );
+      }
+
+      const { result } = await call(
+        "import_layers",
+        { layers: resolvidos, compName, canvasWidth, canvasHeight },
+        { timeoutMs: 180_000 }
+      );
+
+      const todos = [...avisos, ...(result.warnings ?? [])];
+
+      return asText({
+        comp: result.comp,
+        camadas: result.placed,
+        canvasOriginal: `${canvasWidth}x${canvasHeight}`,
+        escalaParaComp: result.canvasScale,
+        posicoes: result.layers,
+        avisos: todos.length ? todos : undefined,
+        proximoPasso:
+          "Chame save_frame e compare com o original em compare_images. Remontagem " +
+          "alinhada dá diferença perto de zero; qualquer coisa acima disso é elemento " +
+          "fora do lugar ou recorte faltando.",
       });
     }
   );

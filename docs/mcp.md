@@ -125,6 +125,7 @@ e a lista de comps, está tudo ligado.
 | `crop_image` | Recorta da referência o que não dá para vetorizar, e remove o fundo |
 | `measure_image` | Mede cor, forma e raio de canto nos pixels de um PNG |
 | `import_footage` | Traz um arquivo do disco para a comp, enquadrado e no tempo |
+| `import_layers` | Remonta vários recortes PNG como camadas separadas na comp |
 | `describe_brand` | Cores e fontes da marca em uso |
 | `set_brand` | Registra a identidade do cliente, ou troca de perfil |
 | `describe_scene_format` | Explica o formato do SceneSpec |
@@ -163,7 +164,7 @@ as cores vêm da imagem e o texto sai em Arial.
 
 ### Sobre o tamanho do conjunto
 
-São vinte e duas, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
+São vinte e três, e isso é uma decisão. Cada ferramenta ocupa contexto em toda conversa; um
 conjunto grande piora a escolha do modelo em vez de melhorar. O que não couber vai
 por `execute_script`, e só vira ferramenta dedicada quando houver motivo — uma
 operação destrutiva que precisa de confirmação, um resultado que precisa de
@@ -182,6 +183,16 @@ uma decisão que é de política — e trocar de fornecedor viraria release de s
 
 Com o contrato estreito, o fluxo fica: a conversa gera ou edita, salva em disco, e chama
 `import_footage` com o caminho. Qualquer provedor que saiba gravar um arquivo serve.
+
+`import_layers` é a mesma ideia para o caso de N recortes do mesmo original: a conversa
+recorta cada elemento, e a ferramenta remonta tudo na comp, cada um no lugar exato. A
+posição vem **medida no alpha**, não informada — errar coordenada à mão é o que faz a
+remontagem parecer certa de longe e desmontar na primeira animação.
+
+E um recorte que volta inteiro transparente vira aviso, não camada: seleção que não achou
+nada devolve PNG vazio sem erro, e importado ele vira uma camada invisível no meio de dez.
+Quem for caçar o defeito olha posição, escala e modo de mesclagem antes de desconfiar do
+arquivo.
 
 Duas coisas que a resposta conta porque o After Effects não conta:
 

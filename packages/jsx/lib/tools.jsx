@@ -213,6 +213,10 @@ vec.tools.import_footage = function (args) {
   return vec.importFootage(args || {});
 };
 
+vec.tools.import_layers = function (args) {
+  return vec.importLayers(args || {});
+};
+
 // ---------------------------------------------------------------- arrumação
 
 /**

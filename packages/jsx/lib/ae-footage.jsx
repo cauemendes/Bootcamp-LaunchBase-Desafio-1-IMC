@@ -72,6 +72,27 @@ function vecDescreverFootage(item) {
 }
 
 /**
+ * Põe a camada na caixa: âncora no centro do conteúdo, posição no centro da caixa.
+ *
+ * É o único par que mantém a imagem centrada qualquer que seja a escala — e âncora
+ * no centro também é o que faz `popIn` crescer no lugar em vez de pular para o canto.
+ */
+function vecEnquadrar(layer, item, caixa, fit, opacidade) {
+  var escala =
+    fit === "none"
+      ? [100, 100]
+      : vec.escalaParaCaixa(item.width, item.height, caixa.w, caixa.h, fit);
+
+  var t = layer.property("ADBE Transform Group");
+  t.property("ADBE Anchor Point").setValue([item.width / 2, item.height / 2]);
+  t.property("ADBE Position").setValue([caixa.x + caixa.w / 2, caixa.y + caixa.h / 2]);
+  t.property("ADBE Scale").setValue(escala);
+  t.property("ADBE Opacity").setValue(opacidade);
+
+  return escala;
+}
+
+/**
  * Coloca um arquivo do disco como camada.
  *
  * @param {Object} args  { path, compName, name, x, y, width, height, fit,
@@ -141,13 +162,7 @@ vec.importFootage = function (args) {
       : { x: 0, y: 0, w: comp.width, h: comp.height };
 
     var fit = args.fit || "contain";
-    var escala = fit === "none" ? [100, 100] : vec.escalaParaCaixa(item.width, item.height, caixa.w, caixa.h, fit);
-
-    var t = layer.property("ADBE Transform Group");
-    t.property("ADBE Anchor Point").setValue([item.width / 2, item.height / 2]);
-    t.property("ADBE Position").setValue([caixa.x + caixa.w / 2, caixa.y + caixa.h / 2]);
-    t.property("ADBE Scale").setValue(escala);
-    t.property("ADBE Opacity").setValue(vec.has(args, "opacity") ? args.opacity : 100);
+    var escala = vecEnquadrar(layer, item, caixa, fit, vec.has(args, "opacity") ? args.opacity : 100);
 
     // ── Tempo ─────────────────────────────────────────────────────────────────
     var inicio = vec.has(args, "startFrame") ? Math.round(args.startFrame) : 0;
@@ -229,4 +244,113 @@ vec.importFootage = function (args) {
   }
 
   return resultado;
+};
+
+/**
+ * Remonta uma imagem achatada como várias camadas.
+ *
+ * ── O que isto resolve ────────────────────────────────────────────────────────
+ * Um JPG de referência vira N recortes com alpha — cada elemento no seu PNG —, e o
+ * designer quer os N de volta na comp exatamente onde estavam, empilhados na ordem
+ * certa. Fazer isso à mão é importar, posicionar e conferir N vezes; o erro de um
+ * pixel em cada um some no meio e só aparece quando algo anima.
+ *
+ * Quem recorta não é esta ferramenta — é a conversa, com o provedor que estiver
+ * ligado. Aqui chega a lista já resolvida, com cada caixa medida no espaço do
+ * canvas original, e o trabalho é mecânico: importar, escalar do canvas para a comp,
+ * empilhar.
+ *
+ * ── Ordem ─────────────────────────────────────────────────────────────────────
+ * A lista vem de cima para baixo, como se lê no painel de timeline. Como toda camada
+ * nova entra no topo, o laço anda de trás para frente — assim o primeiro da lista
+ * termina em cima, que é o que quem pediu espera.
+ */
+vec.importLayers = function (args) {
+  args = args || {};
+
+  var lista = args.layers;
+  if (!(lista instanceof Array) || lista.length === 0) {
+    throw new Error("import_layers precisa de `layers` com pelo menos um recorte.");
+  }
+
+  var comp = vec.findComp(args.compName);
+  var avisos = [];
+
+  // O canvas do recorte quase nunca é do tamanho da comp: o print veio de outra
+  // resolução, ou o provedor reduziu a imagem antes de processar. Uma proporção só,
+  // aplicada a todas as caixas, mantém a remontagem fiel.
+  var canvasW = args.canvasWidth || comp.width;
+  var canvasH = args.canvasHeight || comp.height;
+  var k = comp.width / canvasW;
+
+  if (Math.abs(comp.height / canvasH - k) > 0.01) {
+    avisos.push(
+      "O canvas dos recortes (" + canvasW + "x" + canvasH + ") tem proporção diferente da " +
+        "comp (" + comp.width + "x" + comp.height + "). Usei a escala horizontal; confira " +
+        "o alinhamento vertical."
+    );
+  }
+
+  var silenciado = vec.suppressDialogs();
+  app.beginUndoGroup("Vectorize AE - import layers");
+
+  var colocadas = [];
+
+  try {
+    for (var i = lista.length - 1; i >= 0; i--) {
+      var spec = lista[i];
+
+      try {
+        var arquivo = new File(spec.path);
+
+        if (!arquivo.exists) {
+          avisos.push('Não achei "' + spec.path + '" — camada ignorada.');
+          continue;
+        }
+
+        var item = vec.importarArquivo(arquivo);
+        var layer = comp.layers.add(item);
+
+        layer.name = vec.safeName(spec.name, item.name);
+        layer.label = vec.LABEL.asset;
+        layer.comment = "Layer rebuilt by Vectorize AE";
+
+        var caixa = {
+          x: spec.x * k,
+          y: spec.y * k,
+          w: spec.width * k,
+          h: spec.height * k,
+        };
+
+        vecEnquadrar(layer, item, caixa, "contain", vec.has(spec, "opacity") ? spec.opacity : 100);
+
+        colocadas.push({
+          name: layer.name,
+          index: layer.index,
+          x: Math.round(caixa.x),
+          y: Math.round(caixa.y),
+          width: Math.round(caixa.w),
+          height: Math.round(caixa.h),
+        });
+      } catch (e) {
+        avisos.push('"' + (spec.name || spec.path) + '": ' + vec.describeError(e));
+      }
+    }
+  } finally {
+    vec.restoreDialogs(silenciado);
+    app.endUndoGroup();
+  }
+
+  // Invertido de volta: o laço andou de trás para frente, e quem lê a resposta espera
+  // a mesma ordem que mandou.
+  colocadas.reverse();
+
+  return {
+    ok: colocadas.length > 0,
+    comp: comp.name,
+    placed: colocadas.length,
+    layers: colocadas,
+    canvasScale: k,
+    warnings: avisos,
+  };
 };
