@@ -127,6 +127,35 @@ da forma, depois a rotação.
 
 Um modificador afeta os paths **acima** dele no mesmo grupo.
 
+## Referência de propriedade envelhece quando o grupo ganha um irmão
+
+Visto num After Effects real, montando um glitch:
+
+```javascript
+var rect = inner.addProperty("ADBE Vector Shape - Rect");
+var pos  = rect.property("ADBE Vector Rect Position");
+
+inner.addProperty("ADBE Vector Graphic - Fill");   // <- o grupo mudou
+
+pos.setValueAtTime(0, [100, 100]);   // ReferenceError: Object is invalid
+```
+
+`addProperty` num grupo invalida as referências que você já tinha para os **irmãos**
+dentro dele. A referência ao **grupo-pai** sobrevive — `group.name` continua funcionando
+depois de vários `inner.addProperty`, e é por isso que `vec.addGroup` não quebra.
+
+A mensagem não ajuda em nada: `Object is invalid`, com arquivo e linha da ponte, não do
+código que falhou. Quem topa com isso perde uma rodada inteira isolando em pedaços.
+
+**A regra:** termine tudo o que for fazer numa propriedade antes de adicionar um irmão
+no mesmo grupo — ou busque a referência de novo depois. Não guarde referência de irmão
+atravessando um `addProperty`.
+
+Na prática isso quase nunca custa nada, porque a ordem que evita o problema é a mesma que
+o AE quer para renderizar: `addProperty` acrescenta no fim do grupo, e no shape layer a
+pintura tem que ficar **abaixo** do path para pintá-lo. Geometria primeiro, fill e stroke
+depois, cada um configurado na hora em que é criado — que é o que este projeto já faz.
+
 ## Sistema de coordenadas
 
 Este é o ponto que mais gera bug ao converter design para AE.

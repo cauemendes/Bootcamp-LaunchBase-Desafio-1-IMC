@@ -524,6 +524,24 @@ só percorre a imagem inteira no caso degenerado — que é justamente o que pre
 resposta certa. Sem tolerância: um pixel diferente já é desenho, e qualquer margem aqui
 rejeitaria arte legítima de fundo quase uniforme.
 
+## Script que falha no meio não desfaz o que já fez
+
+O `finally` fecha o grupo de undo, o erro sobe, e **o parcial fica no projeto**: as
+camadas, os keyframes e os efeitos criados até a linha que estourou. Nada na tela diz
+isso.
+
+O custo não é o resíduo em si — é o que vem depois. Quem estava usando escreve a
+correção, roda de novo, e passa a depurar em cima de estado sujo: keyframes de uma
+tentativa antiga parecendo resultado da nova. Já queimou uma rodada de diagnóstico num
+efeito de glitch, em que a camada "já tinha keyframes de antes do crash".
+
+O grupo de undo sempre existiu e sempre desfez tudo em um passo. O que faltava era a
+mensagem de erro dizer isso — hoje `execute_script` acrescenta ao erro o nome do grupo de
+undo e a instrução de desfazer ou conferir a comp antes de tentar de novo.
+
+Ao escrever qualquer ferramenta que altere o projeto: se ela pode parar no meio, a
+mensagem de erro precisa dizer o que ficou para trás.
+
 ## Grupo de undo não aninha
 
 Um `beginUndoGroup` aberto e não fechado — ou um `endUndoGroup` a mais — faz o After

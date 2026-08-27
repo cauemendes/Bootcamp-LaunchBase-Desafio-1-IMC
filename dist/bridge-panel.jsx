@@ -3847,6 +3847,23 @@ vec.tools.execute_script = function (args) {
     // O retorno vai virar JSON. Objetos do DOM do AE (camadas, comps, propriedades)
     // não serializam — descrever em vez de tentar.
     return { value: vec.serializable(resultado) };
+  } catch (e) {
+    // ── Por que a mensagem de erro fala do que ficou para trás ─────────────────
+    // Script que para no meio não desfaz o que já fez. As camadas, os keyframes e os
+    // efeitos criados até a linha que falhou continuam no projeto, e nada na tela diz
+    // isso. Quem estava usando escreve a correção, roda de novo, e agora depura em
+    // cima de resíduo: keyframes de uma tentativa antiga parecendo resultado da nova.
+    //
+    // Já custou uma rodada inteira de diagnóstico num efeito de glitch. O grupo de undo
+    // sempre existiu e sempre desfez tudo em um passo — o que faltava era alguém dizer.
+    throw new Error(
+      vec.describeError(e) +
+        "\n\nATENÇÃO: o script parou no meio, e o que ele já tinha feito CONTINUA no " +
+        'projeto. Está tudo num grupo de undo só, chamado "' + rotulo + '": um Cmd+Z ' +
+        "desfaz o parcial inteiro. Desfaça, ou confira a comp com describe_comp, ANTES " +
+        "de tentar de novo — corrigir por cima do resíduo é como um defeito novo se " +
+        "esconde."
+    );
   } finally {
     app.endUndoGroup();
   }
@@ -4012,7 +4029,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 16;
+var VEC_PANEL_BUILD = 17;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
