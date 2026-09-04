@@ -338,16 +338,42 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         return asError(`Não consegui renderizar o frame: ${err.message}`);
       }
 
-      if (tentativa.uniforme && tentativa.result.method === "renderQueue") {
-        try {
-          const direto = await renderizar({ method: "direct" });
-          if (!direto.uniforme) {
-            recuperado = tentativa.result.method;
-            tentativa = direto;
+      // ── Qual método tentar de novo ──────────────────────────────────────────
+      // Aqui morava um defeito meu: a recuperação pedia `method: "direct"` sempre que o
+      // frame uniforme tivesse vindo da fila. Só que `auto` já tenta o direto primeiro e
+      // só cai para a fila quando ele falha — então pedir "direct" de novo era pedir a
+      // falha de novo, e a recuperação nunca podia funcionar. Dead code que parecia rede
+      // de segurança.
+      //
+      // O outro método só existe quando o primeiro foi o direto.
+      let diagnostico = null;
+
+      if (tentativa.uniforme) {
+        if (tentativa.result.method === "saveFrameToPng") {
+          try {
+            const pelaFila = await renderizar({ method: "queue" });
+            if (!pelaFila.uniforme) {
+              recuperado = tentativa.result.method;
+              tentativa = pelaFila;
+            }
+          } catch {
+            // A fila também não colou. Segue com o que se tem; o diagnóstico abaixo diz
+            // o que está acontecendo na comp.
           }
-        } catch {
-          // O caminho direto também não colou. Segue com o que se tem — o aviso de frame
-          // uniforme abaixo explica o que a pessoa está vendo.
+        }
+
+        // ── Preto de render e preto de verdade são idênticos de fora ───────────
+        // Um exige renderizar de outro jeito; o outro exige mexer na comp — ou não
+        // exige nada, porque o frame está certo. Sem separar os dois, quem está do
+        // outro lado ou insiste em renderizar um frame correto, ou vai ajustar o design
+        // atrás de um defeito que está no arquivo offline.
+        if (tentativa.uniforme) {
+          try {
+            const d = await call("diagnose_frame", { compName: args.compName, time: args.time });
+            diagnostico = d.result;
+          } catch {
+            // Não poder diagnosticar não pode derrubar a resposta do frame.
+          }
         }
       }
 
@@ -375,20 +401,39 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
             type: "text",
             text:
               (recuperado
-                ? "A fila de render devolveu um frame vazio nesta comp, então usei " +
-                  "saveFrameToPng e deu certo. Isso acontece em projeto com footage de " +
-                  "vídeo offline, mesmo com as camadas desligadas. Vale passar " +
-                  '`method: "direct"` nas próximas chamadas desta comp e poupar a ida à ' +
-                  "fila.\n\n"
+                ? "O caminho direto devolveu um frame vazio nesta comp, então fui pela " +
+                  "fila de render e deu certo. Vale passar `method: \"queue\"` nas " +
+                  "próximas chamadas desta comp.\n\n"
                 : "") +
               (uniforme
                 ? `ATENÇÃO: o frame saiu ${uniforme} — não há desenho nenhum nele.\n\n` +
                   "NÃO meça nada aqui e NÃO conclua nada sobre o resultado do que você " +
                   "construiu. Medir cor num frame vazio devolve respostas coerentes e " +
                   "erradas, e a cena sai com o desenho certo e a cor errada.\n\n" +
-                  "Causas conhecidas, em ordem: o tempo pedido cai fora do intervalo da " +
-                  "comp; a comp está vazia neste instante; as camadas estão desligadas. " +
-                  "Confirme o instante com describe_project antes de renderizar de novo.\n\n"
+                  // ── Duas causas opostas, idênticas de fora ────────────────────
+                  // "O render falhou" e "o frame É preto" produzem o mesmo arquivo. Uma
+                  // pede outro método; a outra pede outro instante — ou nada, porque o
+                  // frame está certo. Listar causas genéricas fazia quem lê escolher no
+                  // escuro, então agora a comp é consultada e a resposta é sobre ela.
+                  (diagnostico
+                    ? `DIAGNÓSTICO DESTA COMP: ${diagnostico.verdict}\n\n` +
+                      `Camadas: ${diagnostico.layers} · visíveis em ` +
+                      `${diagnostico.displayTime}s: ${diagnostico.visibleLayers.length}` +
+                      (diagnostico.offlineFootage.length
+                        ? ` · OFFLINE: ${diagnostico.offlineFootage.join(", ")}`
+                        : "") +
+                      (diagnostico.soloed ? ` · em solo: ${diagnostico.soloed}` : "") +
+                      (diagnostico.disabled ? ` · desligadas: ${diagnostico.disabled}` : "") +
+                      (diagnostico.outsideTimeRange
+                        ? ` · fora do tempo: ${diagnostico.outsideTimeRange}`
+                        : "") +
+                      (diagnostico.fullyTransparent
+                        ? ` · opacidade zero: ${diagnostico.fullyTransparent}`
+                        : "") +
+                      "\n\n"
+                    : "Não consegui diagnosticar a comp. Causas conhecidas: footage " +
+                      "offline (a fila de render devolve preto sem reclamar); o instante " +
+                      "cai fora do intervalo das camadas; tudo desligado.\n\n")
                 : "") +
               (divergente
                 ? `ATENÇÃO: o PNG saiu ${medidas.width}×${medidas.height}, mas a comp é ` +

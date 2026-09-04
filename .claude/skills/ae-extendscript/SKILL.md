@@ -660,6 +660,42 @@ parece problema de render e é problema de destino.
 Escreva numa pasta sua. Neste projeto é `Folder.userData/vectorize-ae/bridge/frames`,
 que é território comprovado: a ponte grava ali o tempo todo.
 
+## Preto de render e preto de verdade são o mesmo arquivo
+
+Um frame de uma cor só tem duas causas que pedem respostas opostas, e de fora são
+indistinguíveis:
+
+1. **O render falhou.** Footage offline na comp faz a fila de render entregar preto —
+   arquivo válido, tamanho normal, imagem vazia. O AE não reclama: renderiza o buraco.
+2. **O frame É preto.** Nenhuma camada visível naquele instante: in-point ainda não
+   chegou, opacidade em zero, camada desligada, ou solo em camada vazia.
+
+Confundir as duas custa caro nos dois sentidos — ou se renderiza de novo um frame que
+está certo, ou se mexe no design atrás de um defeito que está no arquivo offline.
+
+`vec.diagnoseFrame(comp, time)` varre a comp e conta o que existe naquele instante:
+camadas visíveis, footage offline, em solo, desligadas, fora do intervalo, opacidade
+zero. Ele é chamado **só quando o frame já saiu uniforme** — varrer a comp em toda
+exportação que deu certo é desperdício.
+
+Duas armadilhas na implementação:
+
+- `layer.inPoint` e `layer.outPoint` estão em tempo de comp. Comparar com um tempo
+  relativo acusa "fora do intervalo" em toda comp cujo `displayStartTime` não é zero.
+  Alinhe com `comp.displayStartTime + t` antes de comparar.
+- `layer.source.footageMissing` é o sinal de offline, e vale mesmo com a camada
+  desligada — a fila de render devolve preto de qualquer jeito.
+
+### E a recuperação automática só tem um lance
+
+`auto` tenta `saveFrameToPng` e **só cai para a fila quando ele falha**. Então um frame
+uniforme que voltou com `method: "renderQueue"` já prova que o caminho direto não
+entregou: pedir `method: "direct"` ali é pedir a mesma falha de novo.
+
+Este projeto teve exatamente esse defeito, com um teste verde em cima dele — a ponte
+falsa respondia ao "direct" com um frame bom, coisa que o AE real nunca faria. Só existe
+segunda tentativa no sentido contrário: uniforme vindo do direto pode tentar a fila.
+
 ## Renderizar frame falha dos dois lados, e de formas diferentes
 
 **`saveFrameToPng` às vezes retorna sem gravar nada.** O método está presente, a chamada

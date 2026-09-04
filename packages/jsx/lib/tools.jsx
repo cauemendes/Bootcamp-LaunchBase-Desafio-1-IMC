@@ -123,6 +123,18 @@ vec.tools.save_frame = function (args) {
   };
 };
 
+/**
+ * Por que o frame saiu de uma cor só.
+ *
+ * Chamado só quando já saiu — não vale gastar uma varredura da comp em toda exportação
+ * que deu certo.
+ */
+vec.tools.diagnose_frame = function (args) {
+  args = args || {};
+  var comp = vec.findComp(args.compName);
+  return vec.diagnoseFrame(comp, typeof args.time === "number" ? args.time : comp.time);
+};
+
 // ---------------------------------------------------------------- construção
 
 vec.tools.build_scene = function (args) {

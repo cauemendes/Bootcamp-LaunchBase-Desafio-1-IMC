@@ -125,30 +125,39 @@ test("save_frame responde com a imagem e o caminho do arquivo", async () => {
   assert.ok(r.content.some((c) => c.type === "image"), "a imagem vem junto");
 });
 
-test("frame preto da fila faz o servidor tentar a API direta", async () => {
-  // ── O comportamento que este teste tranca ────────────────────────────────────
-  // A fila de render entrega preto sólido em projeto com footage de vídeo offline, e
-  // preto sólido passa por frame: quem medir cor nele recebe respostas coerentes e a cena
-  // sai inteira escura. Já que os dois caminhos falham em situações diferentes, receber
-  // preto de um é motivo para tentar o outro.
+test("preto da fila não faz o servidor repetir o caminho que acabou de falhar", async () => {
+  // ── Por que este teste mudou de lado ─────────────────────────────────────────
+  // Ele afirmava o contrário: preto vindo da fila devia disparar uma segunda tentativa
+  // com `method: "direct"`. Passava — e mentia. A ponte falsa respondia ao "direct" com
+  // um frame bom, coisa que o After Effects real nunca faria: `auto` SÓ cai para a fila
+  // depois que o direto falha, então method === "renderQueue" já prova que o direto não
+  // entregou. A recuperação era impossível por construção, e o teste verde escondia isso.
+  //
+  // Cobertura falsa é pior que nenhuma: este caminho parecia ter rede de segurança.
   const dir = tempDir();
   const preto = gravarPng(path.join(dir, "preto.png"), 20, 20, () => [0, 0, 0]);
-  const bom = gravarPng(path.join(dir, "bom.png"), 20, 20, (x, y) => [x * 10, y * 10, 90]);
 
   const { client, chamadas } = await conectar({
-    save_frame: (args) =>
-      args.method === "direct"
-        ? { path: bom, method: "saveFrameToPng", time: 0, comp: "C", width: 20, height: 20 }
-        : { path: preto, method: "renderQueue", time: 0, comp: "C", width: 20, height: 20 },
+    save_frame: () => ({ path: preto, method: "renderQueue", time: 0, comp: "C", width: 20, height: 20 }),
+    diagnose_frame: () => ({
+      comp: "C",
+      time: 0,
+      displayTime: 0,
+      layers: 4,
+      visibleLayers: ["bg"],
+      offlineFootage: [],
+      soloed: 0,
+      disabled: 0,
+      outsideTimeRange: 0,
+      fullyTransparent: 0,
+      verdict: "1 camada(s) deveriam aparecer. Isto parece falha de render.",
+    }),
   });
 
   const r = await client.callTool({ name: "save_frame", arguments: {} });
-  const texto = r.content.find((c) => c.type === "text").text;
 
-  assert.equal(chamadas.length, 2, "tentou os dois caminhos");
-  assert.equal(chamadas[1].args.method, "direct");
-  assert.match(texto, /frame vazio/);
-  assert.doesNotMatch(texto, /ATENÇÃO: o frame saiu/, "o segundo caminho resolveu");
+  assert.equal(chamadas.filter((c) => c.tool === "save_frame").length, 1);
+  assert.match(r.content.find((c) => c.type === "text").text, /parece falha de render/);
 });
 
 test("frame preto nos dois caminhos avisa em vez de deixar passar", async () => {
@@ -688,4 +697,91 @@ test("import_layers recusa quando os recortes têm canvas diferentes", () => {
     assert.equal(chamadas[0].args.layers.length, 1);
     assert.match(r.content[0].text, /não remontam alinhados/);
   });
+});
+
+// ── Frame preto ───────────────────────────────────────────────────────────────
+// Preto de render e preto de verdade são o mesmo arquivo visto de fora. Um pede outro
+// método, o outro pede outro instante — ou nada, porque o frame está certo.
+
+test("frame uniforme vindo da fila é diagnosticado, não retentado à toa", async () => {
+  // O defeito que estes testes travam: a recuperação pedia `method: "direct"` sempre que
+  // o uniforme viesse da fila. Como `auto` só cai para a fila DEPOIS que o direto falha,
+  // pedir "direct" de novo era pedir a mesma falha — a recuperação nunca podia funcionar.
+  const dir = tempDir();
+  const preto = gravarPng(path.join(dir, "preto.png"), 20, 20, () => [0, 0, 0]);
+
+  const { client, chamadas } = await conectar({
+    save_frame: () => ({
+      path: preto,
+      method: "renderQueue",
+      time: 2,
+      comp: "15_graph",
+      width: 20,
+      height: 20,
+    }),
+    diagnose_frame: () => ({
+      comp: "15_graph",
+      time: 2,
+      displayTime: 2,
+      layers: 12,
+      visibleLayers: [],
+      offlineFootage: ["packshot.mov"],
+      soloed: 0,
+      disabled: 3,
+      outsideTimeRange: 9,
+      fullyTransparent: 0,
+      verdict: "Há footage offline na comp (1). É a causa nº 1 de preto vindo da fila.",
+    }),
+  });
+
+  const r = await client.callTool({ name: "save_frame", arguments: { compName: "15_graph", time: 2 } });
+  const texto = r.content.find((c) => c.type === "text").text;
+
+  assert.match(texto, /DIAGNÓSTICO DESTA COMP/);
+  assert.match(texto, /OFFLINE: packshot\.mov/);
+  assert.match(texto, /fora do tempo: 9/);
+
+  // E, principalmente: nenhuma tentativa de renderizar de novo pelo caminho que acabou
+  // de falhar.
+  const renders = chamadas.filter((c) => c.tool === "save_frame");
+  assert.equal(renders.length, 1, "não pode retentar o método que já falhou");
+  assert.equal(chamadas.at(-1).tool, "diagnose_frame");
+});
+
+test("uniforme vindo do caminho direto ainda tenta a fila, que é o outro método", async () => {
+  const dir = tempDir();
+  const preto = gravarPng(path.join(dir, "vazio.png"), 20, 20, () => [0, 0, 0]);
+  const bom = gravarPng(path.join(dir, "cheio.png"), 20, 20, (x) => (x < 10 ? [255, 0, 0] : [0, 0, 255]));
+
+  const { client, chamadas } = await conectar({
+    save_frame: (args) => ({
+      path: args.method === "queue" ? bom : preto,
+      method: args.method === "queue" ? "renderQueue" : "saveFrameToPng",
+      time: 1,
+      comp: "SC01",
+      width: 20,
+      height: 20,
+    }),
+  });
+
+  const r = await client.callTool({ name: "save_frame", arguments: { compName: "SC01" } });
+  const texto = r.content.find((c) => c.type === "text").text;
+
+  assert.equal(chamadas.filter((c) => c.tool === "save_frame").length, 2);
+  assert.equal(chamadas[1].args.method, "queue");
+  assert.match(texto, /fui pela fila de render e deu certo/);
+  assert.doesNotMatch(texto, /ATENÇÃO: o frame saiu/);
+});
+
+test("frame com desenho não gasta uma ida ao diagnóstico", async () => {
+  const dir = tempDir();
+  const bom = gravarPng(path.join(dir, "ok.png"), 20, 20, (x) => (x < 10 ? [10, 10, 10] : [240, 240, 240]));
+
+  const { client, chamadas } = await conectar({
+    save_frame: () => ({ path: bom, method: "saveFrameToPng", time: 0, comp: "SC01", width: 20, height: 20 }),
+  });
+
+  await client.callTool({ name: "save_frame", arguments: {} });
+
+  assert.equal(chamadas.length, 1, "varrer a comp em toda exportação que deu certo é desperdício");
 });

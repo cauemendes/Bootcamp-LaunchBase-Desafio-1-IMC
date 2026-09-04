@@ -1868,6 +1868,122 @@ function vecSaveFrameInterno(comp, alinhado, destino, metodo) {
   };
 }
 
+/**
+ * Por que este frame saiu de uma cor só.
+ *
+ * ── Por que isto existe ───────────────────────────────────────────────────────
+ * Preto sólido tem duas causas que exigem respostas opostas, e de fora elas são
+ * idênticas:
+ *
+ *   1. O render falhou. Footage offline na comp faz a fila de render entregar preto —
+ *      arquivo válido, tamanho normal, imagem vazia.
+ *   2. O frame É preto. Nenhuma camada visível naquele instante, porque o in-point
+ *      ainda não chegou, a opacidade está em zero, ou tudo está desligado.
+ *
+ * Sem distinguir as duas, quem está do outro lado ou fica tentando renderizar de novo
+ * um frame que está certo, ou ajusta o design achando que o problema é o design.
+ *
+ * A resposta aqui é factual de propósito: conta o que existe na comp naquele instante e
+ * deixa a conclusão para quem lê. Chutar a causa e errar é pior que listar.
+ */
+vec.diagnoseFrame = function (comp, time) {
+  var t = typeof time === "number" ? time : comp.time;
+  var absoluto = comp.displayStartTime + t;
+
+  var offline = [];
+  var visiveis = [];
+  var solados = 0;
+  var desligadas = 0;
+  var foraDoTempo = 0;
+  var transparentes = 0;
+
+  for (var i = 1; i <= comp.numLayers; i++) {
+    var layer = comp.layer(i);
+
+    // Footage que sumiu do disco é a causa nº 1 de preto vindo da fila de render, e o
+    // AE não reclama: ele renderiza o buraco.
+    try {
+      if (layer.source && layer.source.footageMissing) offline.push(layer.name);
+    } catch (e) {}
+
+    try {
+      if (layer.solo) solados++;
+    } catch (e) {}
+
+    var ativa = true;
+
+    try {
+      if (!layer.enabled) {
+        desligadas++;
+        ativa = false;
+      }
+    } catch (e) {}
+
+    // in/out são medidos em tempo de comp, e `time` aqui chega relativo. Comparar os
+    // dois sem alinhar acusa "fora do tempo" numa comp cujo displayStartTime não é zero.
+    if (ativa) {
+      try {
+        if (absoluto < layer.inPoint || absoluto >= layer.outPoint) {
+          foraDoTempo++;
+          ativa = false;
+        }
+      } catch (e) {}
+    }
+
+    if (ativa) {
+      try {
+        var op = layer
+          .property("ADBE Transform Group")
+          .property("ADBE Opacity")
+          .valueAtTime(absoluto, false);
+        if (op <= 0) {
+          transparentes++;
+          ativa = false;
+        }
+      } catch (e) {}
+    }
+
+    if (ativa) visiveis.push(layer.name);
+  }
+
+  var conclusao;
+
+  if (offline.length > 0) {
+    conclusao =
+      "Há footage offline na comp (" + offline.length + "). É a causa nº 1 de preto vindo " +
+      "da fila de render: o After Effects renderiza o buraco sem reclamar. Relinke o " +
+      "arquivo, ou desligue essas camadas antes de exportar o frame.";
+  } else if (visiveis.length === 0) {
+    conclusao =
+      "Nenhuma camada está visível em " + absoluto + "s — o frame é preto de verdade, e " +
+      "renderizar de novo vai dar preto de novo. Escolha outro instante, ou confira " +
+      "in-point e opacidade das camadas.";
+  } else if (solados > 0) {
+    conclusao =
+      solados + " camada(s) em solo. Só elas renderizam; se estiverem vazias naquele " +
+      "instante, o resultado é uma cor só, mesmo com a comp cheia.";
+  } else {
+    conclusao =
+      visiveis.length + " camada(s) deveriam aparecer em " + absoluto + "s. O frame não " +
+      "deveria ter saído de uma cor só: isto parece falha de render, não a comp. Tente o " +
+      "outro método em save_frame.";
+  }
+
+  return {
+    comp: comp.name,
+    time: t,
+    displayTime: absoluto,
+    layers: comp.numLayers,
+    visibleLayers: visiveis,
+    offlineFootage: offline,
+    soloed: solados,
+    disabled: desligadas,
+    outsideTimeRange: foraDoTempo,
+    fullyTransparent: transparentes,
+    verdict: conclusao,
+  };
+};
+
 // ── ae-anim.jsx ──
 /**
  * Aplicar keyframes resolvidos pelo core.
@@ -3661,6 +3777,18 @@ vec.tools.save_frame = function (args) {
   };
 };
 
+/**
+ * Por que o frame saiu de uma cor só.
+ *
+ * Chamado só quando já saiu — não vale gastar uma varredura da comp em toda exportação
+ * que deu certo.
+ */
+vec.tools.diagnose_frame = function (args) {
+  args = args || {};
+  var comp = vec.findComp(args.compName);
+  return vec.diagnoseFrame(comp, typeof args.time === "number" ? args.time : comp.time);
+};
+
 // ---------------------------------------------------------------- construção
 
 vec.tools.build_scene = function (args) {
@@ -4029,7 +4157,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 17;
+var VEC_PANEL_BUILD = 18;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
