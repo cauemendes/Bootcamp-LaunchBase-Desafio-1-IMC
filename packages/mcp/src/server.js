@@ -299,7 +299,12 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
         time: z
           .number()
           .optional()
-          .describe("Instante em segundos. Omitido = o tempo atual da timeline."),
+          .describe(
+            "Instante em segundos. **Omitido = o cursor da timeline** — é o que atende " +
+              '"pegue o frame que está na tela". Cada comp guarda o próprio cursor, ' +
+              "então omitir junto com um `compName` que não é a comp aberta rende o " +
+              "frame de outro lugar; a resposta avisa quando isso acontece."
+          ),
         path: z
           .string()
           .optional()
@@ -443,7 +448,23 @@ export function createServer({ bridge = new Bridge(), brands = new BrandStore() 
                   "Confira a resolução da composição (o seletor Full / Half / Third do " +
                   "painel de composição) e renderize de novo.\n\n"
                 : "") +
-              `${result.comp} · ${result.width}×${result.height} · t=${result.time}s\n` +
+              // ── O cursor de qual comp ────────────────────────────────────────
+              // Cada comp do projeto guarda o próprio tempo. Pedir "o frame que está na
+              // tela" nomeando uma comp que não é a aberta rende o cursor de outra — um
+              // frame legítimo, de um lugar que ninguém está olhando. Nada denuncia isso
+              // na imagem, e a conversa segue analisando o frame errado.
+              (result.timeSource === "playhead" &&
+              result.activeComp &&
+              result.activeComp !== result.comp
+                ? `ATENÇÃO: você não pediu instante, então usei o cursor de ` +
+                  `"${result.comp}" — mas a comp aberta no After Effects é ` +
+                  `"${result.activeComp}". Cada comp guarda o próprio tempo, e este ` +
+                  "não é o frame que a pessoa está vendo. Confirme com ela qual comp " +
+                  "olhar, ou peça o instante explicitamente.\n\n"
+                : "") +
+              `${result.comp} · ${result.width}×${result.height} · t=${result.time}s` +
+              (result.timeSource === "playhead" ? " (cursor da timeline)" : "") +
+              "\n" +
               // O caminho é o que permite medir e recortar em cima deste frame. Sem ele
               // na resposta, quem está do outro lado pede um print à pessoa — que é
               // exatamente o trabalho manual que esta ferramenta elimina.

@@ -785,3 +785,56 @@ test("frame com desenho não gasta uma ida ao diagnóstico", async () => {
 
   assert.equal(chamadas.length, 1, "varrer a comp em toda exportação que deu certo é desperdício");
 });
+
+test("save_frame avisa quando o cursor usado é de outra comp que não a aberta", async () => {
+  // "Pega o frame que está na tela" com um compName que não é a comp aberta rende o
+  // cursor de OUTRA comp: frame legítimo, de um lugar que ninguém está olhando. A imagem
+  // não denuncia nada, e a conversa segue analisando o frame errado.
+  const dir = tempDir();
+  const bom = gravarPng(path.join(dir, "f.png"), 20, 20, (x) => (x < 10 ? [200, 30, 30] : [30, 30, 200]));
+
+  const { client } = await conectar({
+    save_frame: () => ({
+      path: bom,
+      method: "saveFrameToPng",
+      time: 4.2,
+      timeSource: "playhead",
+      comp: "15_graph",
+      activeComp: "master",
+      width: 20,
+      height: 20,
+    }),
+  });
+
+  const texto = (
+    await client.callTool({ name: "save_frame", arguments: { compName: "15_graph" } })
+  ).content.find((c) => c.type === "text").text;
+
+  assert.match(texto, /a comp aberta no After Effects é "master"/);
+  assert.match(texto, /cursor da timeline/);
+});
+
+test("sem divergência de comp, o aviso do cursor não aparece", async () => {
+  const dir = tempDir();
+  const bom = gravarPng(path.join(dir, "g.png"), 20, 20, (x) => (x < 10 ? [200, 30, 30] : [30, 30, 200]));
+
+  const { client } = await conectar({
+    save_frame: () => ({
+      path: bom,
+      method: "saveFrameToPng",
+      time: 1,
+      timeSource: "playhead",
+      comp: "15_graph",
+      activeComp: "15_graph",
+      width: 20,
+      height: 20,
+    }),
+  });
+
+  const texto = (await client.callTool({ name: "save_frame", arguments: {} })).content.find(
+    (c) => c.type === "text"
+  ).text;
+
+  assert.doesNotMatch(texto, /ATENÇÃO/);
+  assert.match(texto, /cursor da timeline/);
+});

@@ -3747,7 +3747,10 @@ vec.tools.save_frame = function (args) {
   args = args || {};
   var comp = vec.findComp(args.compName);
 
-  var time = typeof args.time === "number" ? args.time : comp.time;
+  // Sem `time`, o instante é o do cursor daquela comp — que é o que quem pede
+  // "o frame que está na tela" quer dizer.
+  var doCursor = typeof args.time !== "number";
+  var time = doCursor ? comp.time : args.time;
 
   if (time < 0 || time > comp.duration) {
     throw new Error(
@@ -3764,6 +3767,16 @@ vec.tools.save_frame = function (args) {
     ? new File(args.path)
     : new File(pasta.fsName + "/frame-" + new Date().getTime() + ".png");
 
+  // ── Qual cursor ─────────────────────────────────────────────────────────────
+  // Cada comp guarda o próprio tempo. Pedir "o frame que está na tela" com um
+  // `compName` que não é a comp aberta no visualizador rende o cursor de OUTRA comp —
+  // um frame legítimo, de um lugar que ninguém está olhando, e nada denuncia isso.
+  var aberta = null;
+  try {
+    var ativo = app.project.activeItem;
+    if (ativo && ativo instanceof CompItem) aberta = ativo.name;
+  } catch (e) {}
+
   var saida = vec.saveFrame(comp, time, destino, args.method);
 
   return {
@@ -3771,7 +3784,9 @@ vec.tools.save_frame = function (args) {
     method: saida.method,
     fallbackReason: saida.fallbackReason || null,
     time: round3(saida.time),
+    timeSource: doCursor ? "playhead" : "requested",
     comp: comp.name,
+    activeComp: aberta,
     width: comp.width,
     height: comp.height,
   };
@@ -4157,7 +4172,7 @@ if ($.global.vecBridgeAutoStartId !== undefined && $.global.vecBridgeAutoStartId
  * isso é invisível: a correção está no disco, o defeito continua na tela, e a conclusão
  * natural é que a correção está errada.
  */
-var VEC_PANEL_BUILD = 18;
+var VEC_PANEL_BUILD = 19;
 
 var VEC_BRIDGE_SCHEMA = 3;
 
